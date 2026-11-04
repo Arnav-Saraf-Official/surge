@@ -98,13 +98,13 @@ function buildViewModel(weaponId: string): THREE.Group {
   oliveDrab.map = getWeaponTexture(skin.accent, 'camo')
   polishedSteel.map = getWeaponTexture(skin.accent, 'tech')
 
-  // Glowing bloom materials (emissive intensity > 2.5 creates intense UnrealBloomPass blooming)
-  const bloomAmber = new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff7700, emissiveIntensity: 3.2, roughness: 0.2 })
-  const bloomOrange = new THREE.MeshStandardMaterial({ color: 0xff5500, emissive: 0xff4400, emissiveIntensity: 3.5, roughness: 0.2 })
+  // Subtle emissive accents; muzzle flashes are handled separately.
+  const bloomAmber = new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff7700, emissiveIntensity: 1.0, roughness: 0.2 })
+  const bloomOrange = new THREE.MeshStandardMaterial({ color: 0xff5500, emissive: 0xff4400, emissiveIntensity: 1.0, roughness: 0.2 })
   const bloomRed = new THREE.MeshStandardMaterial({ color: 0xff1133, emissive: 0xff0022, emissiveIntensity: 3.2, roughness: 0.2 })
-  const bloomCyan = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00e5ff, emissiveIntensity: 3.6, roughness: 0.15 })
-  const bloomIceBlue = new THREE.MeshStandardMaterial({ color: 0x7fe3ff, emissive: 0x38bdf8, emissiveIntensity: 3.5, roughness: 0.15 })
-  const bloomGreen = new THREE.MeshStandardMaterial({ color: 0x39ff14, emissive: 0x22ee11, emissiveIntensity: 3.4, roughness: 0.2 })
+  const bloomCyan = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00e5ff, emissiveIntensity: 1.0, roughness: 0.15 })
+  const bloomIceBlue = new THREE.MeshStandardMaterial({ color: 0x7fe3ff, emissive: 0x38bdf8, emissiveIntensity: 1.0, roughness: 0.15 })
+  const bloomGreen = new THREE.MeshStandardMaterial({ color: 0x39ff14, emissive: 0x22ee11, emissiveIntensity: 1.0, roughness: 0.2 })
   const bloomPurple = new THREE.MeshStandardMaterial({ color: 0xbf00ff, emissive: 0xa855f7, emissiveIntensity: 3.2, roughness: 0.2 })
   const bloomGold = new THREE.MeshStandardMaterial({ color: 0xffe066, emissive: 0xf59e0b, emissiveIntensity: 3.2, roughness: 0.2 })
 
@@ -131,8 +131,8 @@ function buildViewModel(weaponId: string): THREE.Group {
       add(0.08, 0.22, 0.14, 0, -0.16, -0.22, darkMetal) // curved banana mag
       add(0.08, 0.12, 0.35, 0, -0.04, 0.25, tacticalTan) // wooden stock
       add(0.09, 0.08, 0.32, 0, 0.01, -0.55, tacticalTan) // handguard
-      add(0.04, 0.04, 0.42, 0, 0.075, -0.45, bloomAmber) // glowing gas tube conduit
-      add(0.03, 0.05, 0.03, 0, 0.08, -0.85, bloomOrange) // front sight post
+      add(0.04, 0.04, 0.42, 0, 0.075, -0.45, gunmetal) // gas tube
+      add(0.03, 0.05, 0.03, 0, 0.08, -0.85, darkMetal) // front sight post
       break
 
     case 'breacher': // Pump "Breacher" Shotgun
@@ -428,9 +428,9 @@ export class GameRenderer {
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      1.1, // Bloom strength
-      0.45, // Bloom radius
-      0.65, // Bloom threshold - emissive elements bloom brightly!
+      0.3,
+      0.35,
+      1.0,
     )
     this.composer.addPass(this.bloomPass)
 
@@ -454,11 +454,11 @@ export class GameRenderer {
   setMap(map: MapDef): void {
     this.scene.fog = new THREE.Fog(map.fog.color, map.fog.near, map.fog.far)
     this.scene.background = new THREE.Color(map.sky)
-    this.hemiLight.color.setHex(map.ambient.color)
-    this.hemiLight.groundColor.setHex(map.sky)
-    this.hemiLight.intensity = map.ambient.intensity
-    this.ambientLight.color.setHex(map.ambient.color)
-    this.ambientLight.intensity = 0.75 * map.ambient.intensity
+    this.hemiLight.color.setHex(0xffffff)
+    this.hemiLight.groundColor.setHex(0x59616d)
+    this.hemiLight.intensity = Math.max(1.5, map.ambient.intensity)
+    this.ambientLight.color.setHex(0xffffff)
+    this.ambientLight.intensity = 2.5
     this.fillLight.color.setHex(map.sun.color)
     this.fillLight.intensity = map.sun.intensity * 0.7
     this.fillLight.position.set(-map.sun.dir[0] * 55, 45, -map.sun.dir[2] * 55)
@@ -561,6 +561,7 @@ export class GameRenderer {
         // Scale texture tiling to the group's real-world dimensions so large
         // walls and floors no longer smear a single tile across the surface.
         if (mat.map) {
+          mat.color.setHex(0xffffff)
           let span = 0
           let rise = 0
           for (const b of boxes) {

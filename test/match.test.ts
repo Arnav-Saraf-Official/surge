@@ -3,12 +3,29 @@ import { createWorld, stepWorld } from '../src/sim/match'
 import { emptyUpgrades } from '../src/data/upgrades'
 import { emptyInput } from '../src/sim/types'
 import type { Loadout } from '../src/sim/types'
+import { aabbOverlap } from '../src/core/math'
+import { playerBox } from '../src/sim/collision'
 
 const loadout: Loadout = {
   slots: ['reaper', 'breacher', 'katana', 'hellfire', null, null, null],
 }
 
 describe('headless match', () => {
+  it('spawns the player in the open courtyard, not inside the default building', () => {
+    const world = createWorld({
+      mapId: 'hollow-ward',
+      loadout,
+      upgrades: emptyUpgrades(),
+      botCount: 0,
+      difficulty: 'normal',
+    })
+    const player = world.players[0]
+
+    expect(player.pos.x).toBeCloseTo(0)
+    expect(player.pos.z).toBeGreaterThan(40)
+    expect(world.colliders.some((collider) => aabbOverlap(playerBox(player.pos, player.height), collider))).toBe(false)
+  })
+
   it('simulates a full minute of bots without producing bad state', () => {
     const world = createWorld({
       mapId: 'hollow-ward',

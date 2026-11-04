@@ -801,7 +801,7 @@ export const MAPS: MapDef[] = [
     boxes: wardBoxes,
     bounds: 100,
     spawns: [
-      [-42, 0.1, 14],
+      [0, 0.1, 45],
       [42, 0.1, 14],
       [-42, 4.5, -10],
       [42, 4.5, -10],
