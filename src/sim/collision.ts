@@ -54,6 +54,7 @@ export function moveAndCollide(
   const out: Vec3 = { x: pos.x, y: pos.y, z: pos.z }
   const v: Vec3 = { x: vel.x, y: vel.y, z: vel.z }
   let hitXZ = false
+  let stepped = false
 
   // Horizontal: X then Z, with step-up when grounded.
   const tryStep = (axis: 'x' | 'z', candidate: number): boolean => {
@@ -64,60 +65,64 @@ export function moveAndCollide(
       return true
     }
     // Step up onto low geometry (stairs, ledges).
-    if (stepHeight > 0) {
+    if (stepHeight > 0 && !stepped) {
       const raised = { x: out.x, y: out.y + stepHeight, z: out.z }
       raised[axis] = candidate
       if (!overlapsAny(colliders, playerBox(raised, height))) {
         out[axis] = candidate
         out.y += stepHeight
+        stepped = true
         return true
       }
     }
     return false
   }
 
-  const nextX = out.x + v.x * dt
-  if (!tryStep('x', nextX)) {
-    v.x = 0
-    hitXZ = true
-  }
-  const nextZ = out.z + v.z * dt
-  if (!tryStep('z', nextZ)) {
-    v.z = 0
-    hitXZ = true
-  }
-
-  // Vertical.
-  const nextY = out.y + v.y * dt
-  const testBox = playerBox({ x: out.x, y: nextY, z: out.z }, height)
+  const maxAxisTravel = Math.max(Math.abs(v.x * dt), Math.abs(v.y * dt), Math.abs(v.z * dt))
+  const steps = Math.max(1, Math.ceil(maxAxisTravel / 0.2))
+  const stepDt = dt / steps
   let landed = false
-  if (overlapsAny(colliders, testBox)) {
-    if (v.y <= 0) {
-      // Snap to the highest surface we are intersecting.
-      let top = -Infinity
-      for (const c of colliders) {
-        if (aabbOverlap(testBox, c) && c.max.y <= out.y + 0.001 + Math.abs(v.y * dt) + 0.001) {
-          top = Math.max(top, c.max.y)
-        }
-      }
-      if (top === -Infinity) {
-        for (const c of colliders) {
-          if (aabbOverlap(testBox, c)) top = Math.max(top, c.max.y)
-        }
-      }
-      out.y = Math.max(0, top)
-      v.y = 0
-      landed = true
-    } else {
-      let bottom = Infinity
-      for (const c of colliders) {
-        if (aabbOverlap(testBox, c)) bottom = Math.min(bottom, c.min.y)
-      }
-      out.y = bottom - height - 0.001
-      v.y = 0
+  for (let i = 0; i < steps; i++) {
+    if (v.x !== 0 && !tryStep('x', out.x + v.x * stepDt)) {
+      v.x = 0
+      hitXZ = true
     }
-  } else {
-    out.y = nextY
+    if (v.z !== 0 && !tryStep('z', out.z + v.z * stepDt)) {
+      v.z = 0
+      hitXZ = true
+    }
+
+    if (v.y === 0) continue
+    const nextY = out.y + v.y * stepDt
+    const testBox = playerBox({ x: out.x, y: nextY, z: out.z }, height)
+    if (overlapsAny(colliders, testBox)) {
+      if (v.y <= 0) {
+        // Snap to the highest surface we are intersecting.
+        let top = -Infinity
+        for (const c of colliders) {
+          if (aabbOverlap(testBox, c) && c.max.y <= out.y + 0.001 + Math.abs(v.y * stepDt) + 0.001) {
+            top = Math.max(top, c.max.y)
+          }
+        }
+        if (top === -Infinity) {
+          for (const c of colliders) {
+            if (aabbOverlap(testBox, c)) top = Math.max(top, c.max.y)
+          }
+        }
+        out.y = Math.max(0, top)
+        v.y = 0
+        landed = true
+      } else {
+        let bottom = Infinity
+        for (const c of colliders) {
+          if (aabbOverlap(testBox, c)) bottom = Math.min(bottom, c.min.y)
+        }
+        out.y = bottom - height - 0.001
+        v.y = 0
+      }
+    } else {
+      out.y = nextY
+    }
   }
 
   return { pos: out, vel: v, onGround: landed, hitXZ }

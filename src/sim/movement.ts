@@ -14,8 +14,8 @@ export const DOUBLE_JUMP_HEIGHT_SCALE = 0.7
 export const AIR_ACCEL = 22
 export const TERMINAL_VELOCITY = 60
 export const GRAPPLE_BOOST_DURATION = 5
-const GRAPPLE_REEL_SPEED = 8
-const GRAPPLE_BOOST_ACCEL = 36
+const GRAPPLE_REEL_SPEED = 12
+const GRAPPLE_BOOST_ACCEL = 72
 const GRAPPLE_SIDE_OFFSET = 0.32
 
 /** Product of `speed` effects from active abilities. */
@@ -254,6 +254,7 @@ export function releaseGrapple(world: World, player: Player, side: 0 | 1, zip: b
 function applyGrapple(world: World, player: Player, input: InputCmd, dt: number): void {
   const boosting =
     input.grappleBoost && player.grappleBoostFuel > 0 && player.grapples.some((g) => g.active)
+  if (boosting && !player.grappleBoosting) player.vel.y = Math.max(player.vel.y, 10)
   player.grappleBoostFuel = clamp(
     player.grappleBoostFuel + (boosting ? -dt : dt),
     0,
@@ -264,9 +265,6 @@ function applyGrapple(world: World, player: Player, input: InputCmd, dt: number)
     [1, input.grappleR],
   ]
   const right = yawRight(player.yaw)
-  let correctionX = 0
-  let correctionY = 0
-  let correctionZ = 0
   let velocityX = 0
   let velocityY = 0
   let velocityZ = 0
@@ -292,28 +290,20 @@ function applyGrapple(world: World, player: Player, input: InputCmd, dt: number)
     const nz = toAnchor.z / distance
 
     if (distance >= hook.length - 0.02) {
-      const over = Math.max(0, distance - hook.length)
-      if (over > 0) {
-        correctionX += nx * over * 0.9
-        correctionY += ny * over * 0.9
-        correctionZ += nz * over * 0.9
-        const radial = player.vel.x * nx + player.vel.y * ny + player.vel.z * nz
-        if (radial < 0) {
-          velocityX -= nx * radial * 1.02
-          velocityY -= ny * radial * 1.02
-          velocityZ -= nz * radial * 1.02
-        }
+      const radial = player.vel.x * nx + player.vel.y * ny + player.vel.z * nz
+      if (radial < 0) {
+        velocityX -= nx * radial * 1.02
+        velocityY -= ny * radial * 1.02
+        velocityZ -= nz * radial * 1.02
       }
-      const pull = boosting ? GRAPPLE_BOOST_ACCEL : 8
+      const stretch = Math.max(0, distance - hook.length)
+      const pull = boosting ? GRAPPLE_BOOST_ACCEL : Math.min(60, 8 + stretch * 24)
       velocityX += nx * pull * dt
       velocityY += ny * pull * dt
       velocityZ += nz * pull * dt
     }
     if (distance > player.stats.grappleRange * 1.4) releaseGrapple(world, player, side, false)
   }
-  player.pos.x += correctionX
-  player.pos.y += correctionY
-  player.pos.z += correctionZ
   player.vel.x += velocityX
   player.vel.y += velocityY
   player.vel.z += velocityZ

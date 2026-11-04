@@ -150,6 +150,51 @@ describe('movement', () => {
     expect(player.grappleBoostFuel).toBeCloseTo(5, 5)
   })
 
+  it('boost launches from the ground and pulls harder than a normal swing', () => {
+    const regular = flatMatch()
+    const boosted = flatMatch()
+    for (const { player } of [regular, boosted]) {
+      player.grapples[1].active = true
+      player.grapples[1].anchor = { x: 0, y: 12, z: 0 }
+      player.grapples[1].length = 5
+    }
+
+    stepMovement(regular.world, regular.player, cmd({ grappleR: true }), 1 / 60)
+    stepMovement(
+      boosted.world,
+      boosted.player,
+      cmd({ grappleR: true, grappleBoost: true }),
+      1 / 60,
+    )
+
+    expect(boosted.player.pos.y).toBeGreaterThan(regular.player.pos.y)
+    expect(boosted.player.vel.y).toBeGreaterThan(9)
+    expect(Math.hypot(boosted.player.vel.x, boosted.player.vel.z)).toBeGreaterThan(
+      Math.hypot(regular.player.vel.x, regular.player.vel.z),
+    )
+  })
+
+  it('does not let grapple-speed movement tunnel through buildings', () => {
+    const { world, player } = flatMatch()
+    world.colliders = [
+      {
+        min: { x: 1, y: 0, z: -2 },
+        max: { x: 2, y: 10, z: 2 },
+      },
+    ]
+    player.pos = { x: 0, y: 2, z: 0 }
+    player.vel = { x: 80, y: 0, z: 0 }
+    player.onGround = false
+    player.grapples[1].active = true
+    player.grapples[1].anchor = { x: 10, y: 2, z: 0 }
+    player.grapples[1].length = 1
+
+    stepMovement(world, player, cmd({ grappleR: true, grappleBoost: true }), 0.1)
+
+    expect(player.pos.x).toBeLessThanOrEqual(0.601)
+    expect(player.pos.x + 0.4).toBeLessThanOrEqual(1.001)
+  })
+
   it('adds pull from both hooks and balances opposite anchors', () => {
     const single = flatMatch()
     const dual = flatMatch()
