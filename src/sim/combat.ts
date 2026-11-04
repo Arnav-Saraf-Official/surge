@@ -78,10 +78,6 @@ export function tickWeapons(world: World, player: Player, dt: number): void {
     const def = weaponDef(id)
     rt.fCooldown = Math.max(0, rt.fCooldown - dt * cdrBonus)
     rt.tCooldown = Math.max(0, rt.tCooldown - dt * cdrBonus)
-    if (rt.tCharge > 0 && rt.tCooldown > 0 && def.t.charge) {
-      // Charge trickles slowly so cooldown is never the only road to a T ability.
-      rt.tCharge = Math.min(def.t.charge, rt.tCharge + 6 * dt)
-    }
     if (rt.reloading && world.time >= rt.reloadEndsAt) {
       rt.reloading = false
       rt.ammo = def.fire.magazine
@@ -152,6 +148,13 @@ export function fireWeapon(world: World, player: Player): boolean {
 
   rt.nextShotAt = world.time + fireInterval(player, def)
   if (!hasInfAmmo(player)) rt.ammo -= 1
+  const shotDamageMult = effectMult(player, 'damage')
+  const oneShotEffects = player.effects.filter((e) =>
+    e.effects.some((eff) => eff.kind === 'nextShot'),
+  )
+  if (oneShotEffects.length) {
+    player.effects = player.effects.filter((e) => !oneShotEffects.includes(e))
+  }
 
   if (fire.mode === 'projectile') {
     const origin = eyePos(player)
@@ -164,7 +167,7 @@ export function fireWeapon(world: World, player: Player): boolean {
       weaponId: id,
       pos: v3(origin.x + dir.x * 0.8, origin.y + dir.y * 0.8, origin.z + dir.z * 0.8),
       vel: v3(dir.x * (fire.projectileSpeed ?? 40), dir.y * (fire.projectileSpeed ?? 40), dir.z * (fire.projectileSpeed ?? 40)),
-      damage: fire.damage * player.stats.damageMult * effectMult(player, 'damage'),
+      damage: fire.damage * player.stats.damageMult * shotDamageMult,
       splashRadius: fire.splashRadius ?? 3,
       life: 4,
       guided,
@@ -252,8 +255,18 @@ export function fireWeapon(world: World, player: Player): boolean {
         continue
       }
     } else {
-      amount = fire.damage * player.stats.damageMult * effectMult(player, 'damage')
+      amount = fire.damage * player.stats.damageMult * shotDamageMult
       if (target.headshot) amount *= fire.headshotMult
+      if (lethal && lethal.condition === 'B' && isBehind(player, target.player)) {
+        applyDamage(world, target.player, player.id, amount, {
+          headshot: target.headshot,
+          source: 'bullet',
+          weaponId: id,
+          lethal: true,
+          at: target.point,
+        })
+        continue
+      }
       if (lethal && lethal.condition === 'H' && target.headshot) {
         applyDamage(world, target.player, player.id, amount, {
           headshot: true,
@@ -290,7 +303,7 @@ export function fireWeapon(world: World, player: Player): boolean {
       const target = world.players.find((p) => p.id === targetId)
       if (!target || !target.alive) continue
       const range = dist(eyePos(player), eyePos(target))
-      if (range > LETHAL_PELLET_RANGE + 1) continue
+      if (range > LETHAL_PELLET_RANGE) continue
       applyDamage(world, target, player.id, 0, {
         source: 'bullet',
         weaponId: id,

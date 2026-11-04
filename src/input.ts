@@ -75,8 +75,8 @@ export class Input {
 
   private onMouseMove = (e: MouseEvent) => {
     if (!this.locked || this.paused) return
-    this.yaw -= e.movementX * this.sensitivity
-    this.pitch = clamp(this.pitch - e.movementY * this.sensitivity, -1.45, 1.45)
+    this.yaw -= e.movementX * this.sensitivity * this.aimSensMult
+    this.pitch = clamp(this.pitch - e.movementY * this.sensitivity * this.aimSensMult, -1.45, 1.45)
   }
 
   private onMouseDown = (e: MouseEvent) => {
@@ -124,6 +124,7 @@ export class Input {
     cmd.crouch = this.held('KeyC')
     cmd.slide = this.tapped('KeyC') && cmd.sprint
     cmd.jump = this.tapped('Space')
+    cmd.grappleBoost = this.held('Space')
     cmd.fire = this.mouseDown
     cmd.aim = this.rightMouseDown
     cmd.grappleL = this.held('KeyQ')

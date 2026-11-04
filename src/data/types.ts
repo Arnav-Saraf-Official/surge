@@ -62,6 +62,7 @@ export interface FireSpec {
 export type Effect =
   | { kind: 'fireRate'; mult: number }
   | { kind: 'damage'; mult: number }
+  | { kind: 'nextShot' }
   | { kind: 'accuracy'; mult: number }
   | { kind: 'noRecoil' }
   | { kind: 'speed'; mult: number }
@@ -77,7 +78,7 @@ export type Effect =
   | { kind: 'lethalMelee'; condition: Condition }
   | { kind: 'invisible'; shimmerRadius: number }
   | { kind: 'lifesteal'; frac: number }
-  | { kind: 'slowTargets'; mult: number; duration: number }
+  | { kind: 'slowTargets'; mult: number; duration: number; radius: number }
   | { kind: 'guided' }
   | { kind: 'cluster' }
   | { kind: 'deploy' }
@@ -89,6 +90,7 @@ export type Effect =
 export const TIMED_EFFECTS = new Set<Effect['kind']>([
   'fireRate',
   'damage',
+  'nextShot',
   'accuracy',
   'noRecoil',
   'speed',

@@ -148,8 +148,9 @@ export const WEAPONS: WeaponDef[] = [
       slot: 'F',
       tags: ['Offense'],
       cooldown: 5,
-      duration: 3,
-      effects: [{ kind: 'damage', mult: 1.45 }],
+      duration: 6,
+      effects: [{ kind: 'damage', mult: 1.3 }, { kind: 'nextShot' }],
+      notes: 'Your next shot deals 30% more damage.',
     }),
     t: t({
       id: 'goldenHour',
@@ -396,7 +397,7 @@ export const WEAPONS: WeaponDef[] = [
       duration: 2.5,
       effects: [
         { kind: 'knockback', radius: 7, force: 16 },
-        { kind: 'slowTargets', mult: 0.5, duration: 2.5 },
+        { kind: 'slowTargets', mult: 0.5, duration: 2.5, radius: 7 },
       ],
     }),
     t: t({

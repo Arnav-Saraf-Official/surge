@@ -15,6 +15,8 @@ function makeEffect(ability: AbilityDef, weaponId: string, duration: number, now
     ? PIERCE_SHOTS
     : ability.effects.some((e) => e.kind === 'guided' || e.kind === 'cluster')
       ? 1
+      : ability.effects.some((e) => e.kind === 'nextShot')
+        ? 1
       : Infinity
   return {
     abilityId: ability.id,
@@ -102,6 +104,10 @@ export function useAbility(world: World, player: Player, slot: 'F' | 'T'): boole
     player.effects.push(effect)
     if (ability.effects.some((e) => e.kind === 'reveal')) {
       player.revealUntil = Math.max(player.revealUntil, effect.endsAt)
+      player.revealRadius = Math.max(
+        player.revealRadius,
+        ...ability.effects.flatMap((e) => (e.kind === 'reveal' ? [e.radius] : [])),
+      )
     }
   }
 
@@ -140,6 +146,26 @@ function applyInstant(world: World, player: Player, eff: Effect): void {
       }
       break
     }
+    case 'slowTargets': {
+      for (const target of world.players) {
+        const distance = Math.hypot(target.pos.x - player.pos.x, target.pos.z - player.pos.z)
+        if (!target.alive || target.id === player.id || distance > eff.radius) continue
+        target.effects.push({
+          abilityId: `slow-${player.id}-${world.tick}`,
+          abilityName: 'Shockwave',
+          weaponId: player.loadout.slots[player.slot] ?? '',
+          slot: 'F',
+          effects: [{ kind: 'speed', mult: eff.mult }],
+          duration: eff.duration,
+          endsAt: world.time + eff.duration,
+          lethal: undefined,
+          kills: 0,
+          damageDealt: 0,
+          shotsLeft: Infinity,
+        })
+      }
+      break
+    }
     default:
       break
   }
@@ -168,6 +194,10 @@ export function updateEffects(world: World, player: Player, dt: number): void {
   if (expired.length) player.effects = player.effects.filter((e) => !expired.includes(e))
 
   player.invisibility = hasEffect(player, 'invisible') ? 1 : 0
+  if (world.time >= player.revealUntil) {
+    player.revealUntil = 0
+    player.revealRadius = 0
+  }
 }
 
 /** Spend style points: Flourish resets F, Overcharge fills half of the T charge. */

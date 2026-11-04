@@ -185,7 +185,12 @@ export function respawnPlayer(world: World, player: Player): void {
   player.sliding = false
   player.deployed = false
   player.grapples[0].active = false
+  player.grappling = false
+  player.grappleBoostFuel = 5
+  player.grappleBoosting = false
   player.grapples[1].active = false
+  player.revealUntil = 0
+  player.revealRadius = 0
   player.invisibility = 0
   player.invulnerableUntil = world.time + 0.5
   player.lastDamageAt = world.time - 20

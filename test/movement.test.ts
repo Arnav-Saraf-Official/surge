@@ -56,6 +56,19 @@ describe('movement', () => {
     expect(player.vel.y).toBeGreaterThan(0)
   })
 
+  it('applies the Exposed movement penalty', () => {
+    const normal = flatMatch()
+    const exposed = flatMatch()
+    exposed.world.time = 1
+    exposed.player.exposedUntil = 6
+    stepMovement(normal.world, normal.player, cmd({ moveZ: 1 }), 1 / 60)
+    stepMovement(exposed.world, exposed.player, cmd({ moveZ: 1 }), 1 / 60)
+    expect(Math.hypot(exposed.player.vel.x, exposed.player.vel.z)).toBeCloseTo(
+      Math.hypot(normal.player.vel.x, normal.player.vel.z) * 0.8,
+      4,
+    )
+  })
+
   it('gives one extra jump worth 70% of the first jump height', () => {
     const { world, player } = flatMatch()
     stepMovement(world, player, cmd({ jump: true }), 1 / 60)
@@ -109,5 +122,71 @@ describe('movement', () => {
     const fired = fireGrapple(world, player, 0)
     expect(fired).toBe(false)
     expect(player.grapples[0].active).toBe(false)
+  })
+
+  it('uses the held jump key to reel in grapple hooks and drains a five-second boost', () => {
+    const { world, player } = flatMatch()
+    player.pos = { x: 0, y: 100, z: 20 }
+    player.onGround = false
+    player.grapples[1].active = true
+    player.grapples[1].anchor = { x: 0, y: 100, z: 0 }
+    player.grapples[1].length = 20
+
+    for (let i = 0; i < 300; i++) {
+      stepMovement(
+        world,
+        player,
+        cmd({ jump: true, grappleR: true, grappleBoost: true }),
+        1 / 60,
+      )
+    }
+    expect(player.grappleBoostFuel).toBeCloseTo(0, 5)
+    expect(player.grappleBoosting).toBe(false)
+    expect(player.grapples[1].length).toBe(1.5)
+
+    for (let i = 0; i < 300; i++) {
+      stepMovement(world, player, cmd({ grappleR: true }), 1 / 60)
+    }
+    expect(player.grappleBoostFuel).toBeCloseTo(5, 5)
+  })
+
+  it('adds pull from both hooks and balances opposite anchors', () => {
+    const single = flatMatch()
+    const dual = flatMatch()
+    for (const { player } of [single, dual]) {
+      player.pos = { x: 0, y: 20, z: 20 }
+      player.onGround = false
+      player.grapples[1].active = true
+      player.grapples[1].anchor = { x: 0, y: 20, z: 0 }
+      player.grapples[1].length = 20
+    }
+    dual.player.grapples[0].active = true
+    dual.player.grapples[0].anchor = { x: 0, y: 20, z: 0 }
+    dual.player.grapples[0].length = 20
+    stepMovement(single.world, single.player, cmd({ grappleR: true }), 1 / 60)
+    stepMovement(dual.world, dual.player, cmd({ grappleL: true, grappleR: true }), 1 / 60)
+    expect(Math.hypot(dual.player.vel.x, dual.player.vel.z)).toBeGreaterThan(
+      Math.hypot(single.player.vel.x, single.player.vel.z),
+    )
+
+    const balanced = flatMatch()
+    balanced.player.pos = { x: 0, y: 20, z: 20 }
+    balanced.player.onGround = false
+    balanced.player.grapples[0].active = true
+    balanced.player.grapples[0].anchor = { x: -10, y: 20, z: 20 }
+    balanced.player.grapples[0].length = 9.5
+    balanced.player.grapples[1].active = true
+    balanced.player.grapples[1].anchor = { x: 10, y: 20, z: 20 }
+    balanced.player.grapples[1].length = 9.5
+    for (let i = 0; i < 60; i++) {
+      stepMovement(
+        balanced.world,
+        balanced.player,
+        cmd({ grappleL: true, grappleR: true }),
+        1 / 60,
+      )
+    }
+    expect(Math.abs(balanced.player.vel.x)).toBeLessThan(0.1)
+    expect(Math.abs(balanced.player.pos.x)).toBeLessThan(0.1)
   })
 })

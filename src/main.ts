@@ -107,6 +107,10 @@ function frame(now: number): void {
       accumulator -= STEP
       steps++
     }
+    const local = world.players[0]
+    const aimMultiplier = local?.aiming ? 0.45 : 1
+    const grappleMultiplier = local?.grapples.every((hook) => hook.active) ? 0.35 : 1
+    input.aimSensMult = aimMultiplier * grappleMultiplier
 
     const events = world.events
     renderer.handleEvents(events)

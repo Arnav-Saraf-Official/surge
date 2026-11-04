@@ -97,6 +97,8 @@ export interface Player {
   wasAirborne: boolean
   deployed: boolean
   aiming: boolean
+  grappleBoostFuel: number
+  grappleBoosting: boolean
 
   health: number
   alive: boolean
@@ -124,6 +126,7 @@ export interface Player {
   /** Damage dealt tracker for the T charge HUD. */
   markedUntil: number
   revealUntil: number
+  revealRadius: number
   invisibility: number
   /** Quick-swap bookkeeping for G (explosive) and V (blade). */
   quickReturnSlot: number
@@ -235,6 +238,7 @@ export interface InputCmd {
   slide: boolean
   grappleL: boolean
   grappleR: boolean
+  grappleBoost: boolean
   abilityF: boolean
   abilityT: boolean
   reload: boolean
@@ -261,6 +265,7 @@ export const emptyInput = (): InputCmd => ({
   slide: false,
   grappleL: false,
   grappleR: false,
+  grappleBoost: false,
   abilityF: false,
   abilityT: false,
   reload: false,

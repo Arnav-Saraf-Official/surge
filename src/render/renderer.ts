@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import type { MapDef } from '../data/types'
 import { weapon as weaponDef } from '../data/weapons'
 import type { Vec3 } from '../core/math'
-import { clamp, damp, lenXZ } from '../core/math'
+import { clamp, damp, lenXZ, yawRight } from '../core/math'
 import type { SimEvent, World } from '../sim/types'
 import {
   getAsphaltTexture,
@@ -101,12 +101,12 @@ function buildViewModel(weaponId: string): THREE.Group {
   // Subtle emissive accents; muzzle flashes are handled separately.
   const bloomAmber = new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff7700, emissiveIntensity: 1.0, roughness: 0.2 })
   const bloomOrange = new THREE.MeshStandardMaterial({ color: 0xff5500, emissive: 0xff4400, emissiveIntensity: 1.0, roughness: 0.2 })
-  const bloomRed = new THREE.MeshStandardMaterial({ color: 0xff1133, emissive: 0xff0022, emissiveIntensity: 3.2, roughness: 0.2 })
+  const bloomRed = new THREE.MeshStandardMaterial({ color: 0xff1133, emissive: 0xff0022, emissiveIntensity: 1.0, roughness: 0.2 })
   const bloomCyan = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00e5ff, emissiveIntensity: 1.0, roughness: 0.15 })
   const bloomIceBlue = new THREE.MeshStandardMaterial({ color: 0x7fe3ff, emissive: 0x38bdf8, emissiveIntensity: 1.0, roughness: 0.15 })
   const bloomGreen = new THREE.MeshStandardMaterial({ color: 0x39ff14, emissive: 0x22ee11, emissiveIntensity: 1.0, roughness: 0.2 })
-  const bloomPurple = new THREE.MeshStandardMaterial({ color: 0xbf00ff, emissive: 0xa855f7, emissiveIntensity: 3.2, roughness: 0.2 })
-  const bloomGold = new THREE.MeshStandardMaterial({ color: 0xffe066, emissive: 0xf59e0b, emissiveIntensity: 3.2, roughness: 0.2 })
+  const bloomPurple = new THREE.MeshStandardMaterial({ color: 0xbf00ff, emissive: 0xa855f7, emissiveIntensity: 1.0, roughness: 0.2 })
+  const bloomGold = new THREE.MeshStandardMaterial({ color: 0xffe066, emissive: 0xf59e0b, emissiveIntensity: 1.0, roughness: 0.2 })
 
   const add = (
     w: number,
@@ -344,7 +344,11 @@ export class GameRenderer {
   private viewmodel: THREE.Group | null = null
   private currentWeaponId = ''
   private enemyMuzzleTimers = new Map<number, number>()
+  private grappleRopes: [THREE.Line, THREE.Line]
+  private grappleTips: [THREE.Mesh, THREE.Mesh]
   private explosionLight: THREE.PointLight
+  private headlamp: THREE.PointLight
+  private aimBlend = 0
   private orbMesh: THREE.InstancedMesh | null = null
   private projectileMesh: THREE.InstancedMesh | null = null
   private sun: THREE.DirectionalLight
@@ -367,11 +371,35 @@ export class GameRenderer {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.22
+    this.renderer.toneMappingExposure = 1.35
 
     this.camera = new THREE.PerspectiveCamera(100, 1, 0.05, 500)
     this.camera.rotation.order = 'YXZ'
     this.camera.add(this.viewmodelHolder)
+    // The camera must be in the scene graph for its viewmodel children to render.
+    this.scene.add(this.camera)
+    const makeRope = (color: number) => {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
+      const rope = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }),
+      )
+      rope.frustumCulled = false
+      return rope
+    }
+    this.grappleRopes = [makeRope(0x58ddff), makeRope(0xffa45b)]
+    this.grappleTips = [
+      new THREE.Mesh(
+        new THREE.SphereGeometry(0.075, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0x58ddff, toneMapped: false }),
+      ),
+      new THREE.Mesh(
+        new THREE.SphereGeometry(0.075, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffa45b, toneMapped: false }),
+      ),
+    ]
+    this.scene.add(...this.grappleRopes, ...this.grappleTips)
 
     // Sun & lighting setup
     this.sun = new THREE.DirectionalLight(0xffffff, 1.2)
@@ -401,6 +429,12 @@ export class GameRenderer {
     // Explosion light
     this.explosionLight = new THREE.PointLight(0xff7722, 0, 30, 2)
     this.scene.add(this.explosionLight)
+
+    // Operator headlamp: keeps unlit interiors and night maps readable without
+    // flattening the map's own lighting outside.
+    this.headlamp = new THREE.PointLight(0xffe6c4, 1.15, 26, 1.8)
+    this.headlamp.position.set(0, 0.05, -0.15)
+    this.camera.add(this.headlamp)
 
     // Tracers
     const geo = new THREE.BufferGeometry()
@@ -789,12 +823,55 @@ export class GameRenderer {
     const mat = mesh.body.material as THREE.MeshStandardMaterial
     mat.opacity = translucent ? 0.08 : 1
     mat.transparent = translucent
-    mat.depthWrite = !translucent
+    const local = world.players[0]
+    const revealed =
+      isEnemy &&
+      !!local &&
+      local.revealUntil > world.time &&
+      Math.hypot(local.pos.x - player.pos.x, local.pos.z - player.pos.z) <= local.revealRadius
+    mat.emissive.setHex(revealed ? 0x1848ff : 0x000000)
+    mat.emissiveIntensity = revealed ? 0.9 : 1
+    mesh.group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      for (const material of materials) {
+        const depthTest = !revealed
+        const depthWrite = !revealed && !translucent
+        if (material.depthTest !== depthTest || material.depthWrite !== depthWrite) {
+          material.depthTest = depthTest
+          material.depthWrite = depthWrite
+          material.needsUpdate = true
+        }
+      }
+    })
+  }
+
+  private updateGrappleRopes(player: World['players'][number] | undefined): void {
+    const right = player ? yawRight(player.yaw) : null
+    for (const side of [0, 1] as const) {
+      const hook = player?.grapples[side]
+      const visible = !!player?.alive && !!hook?.active && !!right
+      const rope = this.grappleRopes[side]
+      const tip = this.grappleTips[side]
+      rope.visible = visible
+      tip.visible = visible
+      if (!visible || !player || !hook || !right) continue
+      const sideOffset = side === 0 ? -0.32 : 0.32
+      const startX = player.pos.x + right.x * sideOffset
+      const startY = player.pos.y + player.eyeHeight * 0.7
+      const startZ = player.pos.z + right.z * sideOffset
+      const positions = rope.geometry.getAttribute('position') as THREE.BufferAttribute
+      positions.setXYZ(0, startX, startY, startZ)
+      positions.setXYZ(1, hook.anchor.x, hook.anchor.y, hook.anchor.z)
+      positions.needsUpdate = true
+      tip.position.set(hook.anchor.x, hook.anchor.y, hook.anchor.z)
+    }
   }
 
   update(world: World, dt: number, localInputYawPitch?: { yaw: number; pitch: number }): void {
     const local = world.players[0]
     for (const p of world.players) this.syncPlayer(world, p.id, dt)
+    this.updateGrappleRopes(local)
 
     // Drop meshes for players that no longer exist
     for (const [id, mesh] of this.players) {
@@ -816,7 +893,12 @@ export class GameRenderer {
       this.camera.rotation.set(pitch + kick, yaw, 0)
 
       this.fovKick = damp(this.fovKick, clamp(speed * 0.55, 0, 8) + (local.sliding ? 6 : 0), 6, dt)
-      this.camera.fov = 100 + this.fovKick
+      const heldId = local.loadout.slots[local.slot]
+      const heldType = heldId ? weaponDef(heldId).type : 'rifle'
+      const scoped = local.aiming && heldType === 'sniper'
+      const aimFov = heldType === 'sniper' ? 30 : heldType === 'blade' ? 92 : 62
+      this.aimBlend = damp(this.aimBlend, local.aiming ? 1 : 0, 14, dt)
+      this.camera.fov = 100 + this.fovKick - this.aimBlend * (100 - aimFov)
       this.camera.updateProjectionMatrix()
 
       this.shake = Math.max(0, this.shake - dt * 1.6)
@@ -827,13 +909,17 @@ export class GameRenderer {
 
       this.setViewmodel(local.loadout.slots[local.slot])
 
-      // Viewmodel sway + bob
+      // Viewmodel sway + bob, blending toward centre while aiming.
       const vm = this.viewmodelHolder
-      vm.position.set(0.26, -0.24 + bob * 0.6, -0.42)
+      vm.position.set(
+        0.26 * (1 - this.aimBlend),
+        -0.24 + bob * 0.6 + this.aimBlend * 0.06,
+        -0.42 + this.aimBlend * 0.1,
+      )
       vm.rotation.set(0.02 + Math.sin(this.bobPhase) * 0.01, Math.sin(this.bobPhase * 0.5) * 0.012, 0)
       if (local.sliding) vm.position.y -= 0.04
       if (local.deployed) vm.position.x = 0.02
-      if (this.viewmodel) this.viewmodel.visible = local.alive
+      if (this.viewmodel) this.viewmodel.visible = local.alive && !scoped
 
       // Explosion light decay
       if (this.explosionLight.intensity > 0) {

@@ -1,5 +1,6 @@
 import { lenXZ, v3 } from '../core/math'
 import type { Condition } from '../data/types'
+import { weapon as weaponDef } from '../data/weapons'
 import { SP_AWARD, awardSp, killSp, onPlayerKilled } from './style'
 import type { DamageSource, Player, World } from './types'
 
@@ -94,7 +95,7 @@ export function applyDamage(
 ): number {
   if (!victim.alive || world.match.ended) return 0
   if (world.time < victim.invulnerableUntil) return 0
-  if (raw <= 0) return 0
+  if (raw <= 0 && !opts.lethal) return 0
 
   let amount = raw * damageResistance(victim)
   if (opts.source === 'bullet' && !opts.lethal) amount *= NORMAL_BULLET_DAMAGE_MULT
@@ -114,6 +115,16 @@ export function applyDamage(
   if (attacker && attacker !== victim) {
     attacker.lastCombatAt = world.time
     healOnDamage(world, attacker, dealt)
+    if (opts.weaponId) {
+      const chargeNeeded = weaponDef(opts.weaponId).t.charge
+      const runtime = attacker.weapons[opts.weaponId]
+      if (chargeNeeded && runtime) {
+        runtime.tCharge = Math.min(
+          chargeNeeded,
+          runtime.tCharge + dealt * attacker.stats.tChargeMult,
+        )
+      }
+    }
     if (attacker.sliding || world.time - attacker.lastSlideAt <= 1) awardSp(attacker, SP_AWARD.slideDamage)
   }
 
@@ -151,9 +162,12 @@ export function killPlayer(world: World, victim: Player, killerId: number, opts:
   victim.effects = []
   victim.grapples[0].active = false
   victim.grapples[1].active = false
+  victim.grappling = false
+  victim.grappleBoosting = false
   victim.invisibility = 0
   victim.markedUntil = 0
   victim.revealUntil = 0
+  victim.revealRadius = 0
   onPlayerKilled(world, victim)
 
   const killer = world.players.find((p) => p.id === killerId) ?? null
@@ -168,7 +182,14 @@ export function killPlayer(world: World, victim: Player, killerId: number, opts:
     })
     // Awarded kills are credited to the active ability window (lethal powers).
     for (const e of killer.effects) {
-      for (const eff of e.effects) if (eff.kind === 'lethalShot' || eff.kind === 'lethalMelee') e.kills += 1
+      if (!opts.lethal || e.weaponId !== opts.weaponId) continue
+      const lethal = e.effects.some((eff) => eff.kind === 'lethalShot' || eff.kind === 'lethalMelee')
+      if (!lethal) continue
+      e.kills += 1
+      if (e.kills === 1) {
+        const runtime = killer.weapons[e.weaponId]
+        if (runtime) runtime.tCooldown *= 0.5
+      }
     }
   }
 

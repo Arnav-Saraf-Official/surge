@@ -36,8 +36,13 @@ export class Hud {
         <div class="hud-timer" id="hud-timer">8:00</div>
         <div class="hud-block"><span class="label">PLACE</span><span id="hud-place">1st</span></div>
       </div>
-      <div class="crosshair" id="hud-crosshair"><i></i><i></i><i></i><i></i></div>
+      <div class="crosshair" id="hud-crosshair"><i></i><i></i><i></i><i></i><b class="crosshair-dot"></b></div>
+      <div class="scope" id="hud-scope"><div class="scope-reticle"></div></div>
       <div class="hitmarker" id="hud-hitmarker"></div>
+      <div class="grapple-boost" id="hud-grapple">
+        <div class="grapple-label"><span>GRAPPLE BOOST</span><span id="hud-grapple-time">5.0s</span></div>
+        <div class="bar"><div class="fill grapple" id="hud-grapple-fill"></div></div>
+      </div>
       <div class="hud-abilities" id="hud-abilities"></div>
       <div class="hud-bottom-left">
         <div class="health">
@@ -149,6 +154,12 @@ export class Hud {
     set('hud-hpmax', `/ ${Math.round(local.stats.maxHealth)}`)
     this.el['hud-hpbar'].style.width = `${Math.max(0, Math.min(100, (local.health / local.stats.maxHealth) * 100))}%`
     this.el['hud-hpbar'].classList.toggle('low', local.health / local.stats.maxHealth < 0.3)
+    const grappleFuel = Math.max(0, Math.min(5, local.grappleBoostFuel))
+    const grappleActive = local.grapples.some((hook) => hook.active)
+    this.el['hud-grapple'].classList.toggle('show', grappleActive || grappleFuel < 5)
+    this.el['hud-grapple-fill'].style.width = `${(grappleFuel / 5) * 100}%`
+    set('hud-grapple-time', `${grappleFuel.toFixed(1)}s`)
+    this.root.classList.toggle('grapple-boosting', local.grappleBoosting)
 
     set('hud-sp', String(Math.floor(local.sp)))
     this.el['hud-spbar'].style.width = `${local.sp}%`
@@ -168,6 +179,22 @@ export class Hud {
       set('hud-ammo', rt?.reloading ? '…' : String(rt?.ammo ?? 0))
       set('hud-ammomax', `/ ${maxAmmo}`)
     }
+
+    // Dynamic crosshair: opens up and blooms as movement degrades accuracy.
+    const crosshair = this.el['hud-crosshair']
+    const moveSpeed = Math.hypot(local.vel.x, local.vel.z)
+    const baseGap = def ? Math.min(9, def.fire.spread * 900) : 3
+    let gap = baseGap
+    if (local.aiming) {
+      gap *= 0.4
+    } else {
+      gap += Math.min(13, moveSpeed * 1.15)
+      if (!local.onGround) gap += 5
+      if (local.sliding) gap += 2
+    }
+    crosshair.style.setProperty('--gap', `${Math.max(1, Math.min(16, gap)).toFixed(1)}px`)
+    crosshair.classList.toggle('bloom', !local.aiming && (moveSpeed > 3.5 || !local.onGround))
+    this.root.classList.toggle('scoped', !!local.aiming && def?.type === 'sniper')
 
     // Slot bar.
     const slots = this.el['hud-slots']
