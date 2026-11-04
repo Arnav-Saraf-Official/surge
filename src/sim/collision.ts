@@ -50,6 +50,7 @@ export function moveAndCollide(
   dt: number,
   height: number,
   stepHeight = STEP_HEIGHT,
+  terrainHeightAt?: (x: number, z: number) => number,
 ): MoveResult {
   const out: Vec3 = { x: pos.x, y: pos.y, z: pos.z }
   const v: Vec3 = { x: vel.x, y: vel.y, z: vel.z }
@@ -94,6 +95,13 @@ export function moveAndCollide(
 
     if (v.y === 0) continue
     const nextY = out.y + v.y * stepDt
+    const terrainY = terrainHeightAt?.(out.x, out.z) ?? 0
+    if (v.y <= 0 && nextY <= terrainY) {
+      out.y = terrainY
+      v.y = 0
+      landed = true
+      continue
+    }
     const testBox = playerBox({ x: out.x, y: nextY, z: out.z }, height)
     if (overlapsAny(colliders, testBox)) {
       if (v.y <= 0) {

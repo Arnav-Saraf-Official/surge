@@ -1,6 +1,6 @@
-import { dist, distXZ, v3 } from '../core/math'
+import { aabbOverlap, dist, distXZ, v3 } from '../core/math'
 import { Rng } from '../core/rng'
-import { getMap } from '../data/maps'
+import { getMap, terrainHeight } from '../data/maps'
 import type { UpgradeKey, WeaponType } from '../data/types'
 import { weapon as weaponDef } from '../data/weapons'
 import { fireGrapple, stepMovement } from './movement'
@@ -14,6 +14,7 @@ import { emptyInput } from './types'
 import type { InputCmd, Loadout, Orb, Player, World } from './types'
 import type { MapDef } from '../data/types'
 import { emptyUpgrades } from '../data/upgrades'
+import { STAND_HEIGHT, playerBox } from './collision'
 
 export const DEFAULT_SCORE_LIMIT = 25
 export const DEFAULT_TIME_LIMIT = 480
@@ -25,6 +26,7 @@ export interface MatchConfig {
   upgrades: Record<UpgradeKey, number>
   botCount: number
   difficulty: BotDifficulty
+  mode?: 'ffa' | 'training'
   scoreLimit?: number
   timeLimit?: number
   seed?: number
@@ -66,6 +68,42 @@ function collidersFor(map: MapDef) {
   }))
 }
 
+function spawnBlocked(world: World, p: ReturnType<typeof v3>): boolean {
+  const box = playerBox(p, STAND_HEIGHT)
+  return world.colliders.some((c) => aabbOverlap(box, c))
+}
+
+/** Highest solid surface under (x, z) at or just below the given height. */
+function surfaceBelow(world: World, x: number, z: number, fromY: number, maxDrop: number): number | null {
+  let best: number | null = null
+  for (const c of world.colliders) {
+    if (x < c.min.x || x > c.max.x || z < c.min.z || z > c.max.z) continue
+    if (c.max.y <= fromY + 0.02 && c.max.y >= fromY - maxDrop) {
+      if (best === null || c.max.y > best) best = c.max.y
+    }
+  }
+  return best
+}
+
+/**
+ * Turn an authored spawn point into a legal one: lift out of any geometry,
+ * then settle onto the nearest floor below so spawns never start inside
+ * buildings, aircraft or canopy platforms.
+ */
+export function safeSpawn(world: World, spawn: [number, number, number]): ReturnType<typeof v3> {
+  const p = v3(spawn[0], spawn[1], spawn[2])
+  let guard = 0
+  while (spawnBlocked(world, p) && guard < 160) {
+    p.y += 0.25
+    guard++
+  }
+  const top = surfaceBelow(world, p.x, p.z, p.y + 0.1, 3.5)
+  if (top !== null) p.y = top + 0.02
+  p.y = Math.max(p.y, terrainHeight(world.map, p.x, p.z) + 0.02)
+  if (spawnBlocked(world, p)) p.y = 60
+  return p
+}
+
 export function createWorld(cfg: MatchConfig): World {
   const map = getMap(cfg.mapId)
   const rng = new Rng(cfg.seed ?? 1337)
@@ -91,7 +129,7 @@ export function createWorld(cfg: MatchConfig): World {
     rng,
     nextEntityId: orbs.length + 1,
     match: {
-      mode: 'ffa',
+      mode: cfg.mode ?? 'ffa',
       scoreLimit: cfg.scoreLimit ?? DEFAULT_SCORE_LIMIT,
       timeLimit: cfg.timeLimit ?? DEFAULT_TIME_LIMIT,
       startedAt: 0,
@@ -101,10 +139,7 @@ export function createWorld(cfg: MatchConfig): World {
     },
   }
 
-  const spawnAt = (index: number) => {
-    const s = map.spawns[index % map.spawns.length]
-    return v3(s[0], s[1], s[2])
-  }
+  const spawnAt = (index: number) => safeSpawn(world, map.spawns[index % map.spawns.length])
 
   const hero = createPlayer({
     id: 0,
@@ -177,7 +212,7 @@ export function respawnPlayer(world: World, player: Player): void {
       }
     }
   }
-  player.pos = v3(best[0], best[1], best[2])
+  player.pos = safeSpawn(world, best)
   player.vel = v3()
   player.health = player.stats.maxHealth
   player.alive = true
@@ -185,13 +220,13 @@ export function respawnPlayer(world: World, player: Player): void {
   player.sliding = false
   player.deployed = false
   player.grapples[0].active = false
+  player.grapples[1].active = false
   player.grappling = false
   player.grappleBoostFuel = 5
   player.grappleBoosting = false
-  player.grapples[1].active = false
+  player.invisibility = 0
   player.revealUntil = 0
   player.revealRadius = 0
-  player.invisibility = 0
   player.invulnerableUntil = world.time + 0.5
   player.lastDamageAt = world.time - 20
   player.slot = firstSlot(player)
@@ -299,7 +334,7 @@ function updateOrbs(world: World, dt: number): void {
 }
 
 function checkMatchEnd(world: World): void {
-  if (world.match.ended) return
+  if (world.match.ended || world.match.mode === 'training') return
   const elapsed = world.time - world.match.startedAt
   const leader = [...world.players].sort((a, b) => b.score - a.score)[0]
   if (leader.score >= world.match.scoreLimit) {

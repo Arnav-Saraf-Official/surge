@@ -196,6 +196,55 @@ function build3StoryCompound(
     box(centerX, storyH / 2, centerZ, w - 8, storyH, wallT, STONE_LIGHT, 'wall', 'concrete'),
     box(centerX - 4, storyH / 2, centerZ - halfD / 2, wallT, storyH, halfD * 0.7, STONE_LIGHT, 'wall', 'concrete'),
     box(centerX + 4, storyH / 2, centerZ + halfD / 2, wallT, storyH, halfD * 0.7, STONE_LIGHT, 'wall', 'concrete'),
+    // Staggered partitions form connected rooms and blind-corner corridors.
+    ...wallWithGaps(
+      centerX - 9,
+      centerZ - 10,
+      20,
+      storyH,
+      false,
+      [[-7, -3], [3, 7]],
+      wallT,
+      STONE_LIGHT,
+      'wall',
+      'concrete',
+    ),
+    ...wallWithGaps(
+      centerX + 9,
+      centerZ + 10,
+      20,
+      storyH,
+      false,
+      [[-7, -3], [3, 7]],
+      wallT,
+      STONE_LIGHT,
+      'wall',
+      'concrete',
+    ),
+    ...wallWithGaps(
+      centerX,
+      centerZ - 22,
+      w - 12,
+      storyH,
+      true,
+      [[-9, -5], [4, 8]],
+      wallT,
+      STONE_LIGHT,
+      'wall',
+      'concrete',
+    ),
+    ...wallWithGaps(
+      centerX,
+      centerZ + 22,
+      w - 12,
+      storyH,
+      true,
+      [[-9, -5], [4, 8]],
+      wallT,
+      STONE_LIGHT,
+      'wall',
+      'concrete',
+    ),
     // Reception desks / CQC cover
     box(centerX, 0.6, centerZ - 6, 4.5, 1.2, 1.2, METAL, 'cover', 'metal'),
     box(centerX + 3, 0.6, centerZ + 6, 3.2, 1.2, 1.2, METAL, 'cover', 'metal'),
@@ -800,6 +849,7 @@ export const MAPS: MapDef[] = [
     ambient: { color: 0x2b3a55, intensity: 0.6 },
     boxes: wardBoxes,
     bounds: 100,
+    terrain: { amplitude: 3.5, seed: 2, flatRadius: 72 },
     spawns: [
       [0, 0.1, 45],
       [42, 0.1, 14],
@@ -841,22 +891,23 @@ export const MAPS: MapDef[] = [
     ambient: { color: 0x3d4d38, intensity: 0.65 },
     boxes: foundryBoxes,
     bounds: 110,
+    terrain: { amplitude: 7, seed: 5, flatRadius: 84 },
     spawns: [
-      [0, 0.1, 0],
+      [0, 0.1, -22],
       [-12, 0.1, -12],
       [12, 0.1, 12],
-      [-32, 17.5, -32],
-      [32, 17.5, 32],
-      [-32, 28.5, 32],
-      [32, 28.5, -32],
-      [0, 17.5, -32],
-      [0, 17.5, 32],
+      [-32, 17.4, -32],
+      [32, 19.4, 32],
+      [-32, 30.2, 32],
+      [32, 31.0, -32],
+      [0, 17.4, -32],
+      [0, 17.4, 32],
       [-55, 0.1, 0],
       [55, 0.1, 0],
       [0, 0.1, -55],
     ],
     orbs: [
-      [0, 1.2, 0],
+      [0, 1.2, -22],
       [0, 17.5, -32],
       [0, 17.5, 32],
       [-32, 17.5, -32],
@@ -880,12 +931,13 @@ export const MAPS: MapDef[] = [
     ambient: { color: 0x3c4652, intensity: 0.6 },
     boxes: outpostBoxes,
     bounds: 120,
+    terrain: { amplitude: 4.5, seed: 8, flatRadius: 84 },
     spawns: [
       [0, 0.1, 0],
       [-35, 0.1, 0],
       [35, 0.1, 0],
-      [-35, 9.2, 0],
-      [35, 9.2, 0],
+      [-35, 9.6, 0],
+      [35, 9.6, 0],
       [-55, 22.5, -55],
       [55, 22.5, -55],
       [-55, 22.5, 55],
@@ -894,8 +946,8 @@ export const MAPS: MapDef[] = [
       [45, 0.1, 45],
       [-45, 0.1, -45],
       [45, 0.1, -45],
-      [-15, 35.0, 10],
-      [25, 43.0, -20],
+      [-15, 36.4, 10],
+      [25, 44.4, -20],
     ],
     orbs: [
       [0, 1.0, 0],
@@ -905,16 +957,48 @@ export const MAPS: MapDef[] = [
       [55, 22.8, 55],
       [-45, 1.0, 45],
       [45, 1.0, 45],
-      [-15, 35.5, 10],
-      [25, 43.5, -20],
+      [-15, 36.7, 10],
+      [25, 44.7, -20],
     ],
     killY: -30,
     bestLoadouts: 'Hybrid loadout: snipers for watchtowers and flying plane drops; assault rifles & shotguns for ground buildings.',
   },
 ]
 
+const MAP_LAYOUT_SCALE = 1.2
+for (const map of MAPS) {
+  map.bounds = (map.bounds ?? 120) * MAP_LAYOUT_SCALE
+  for (const b of map.boxes) {
+    b.pos[0] *= MAP_LAYOUT_SCALE
+    b.pos[2] *= MAP_LAYOUT_SCALE
+    b.size[0] *= MAP_LAYOUT_SCALE
+    b.size[2] *= MAP_LAYOUT_SCALE
+  }
+  for (const point of [...map.spawns, ...map.orbs]) {
+    point[0] *= MAP_LAYOUT_SCALE
+    point[2] *= MAP_LAYOUT_SCALE
+  }
+  if (map.terrain) map.terrain.flatRadius *= MAP_LAYOUT_SCALE
+}
+
 export const MAP_BY_ID: Record<string, MapDef> = Object.fromEntries(MAPS.map((m) => [m.id, m]))
 
 export function getMap(id: string): MapDef {
   return MAP_BY_ID[id] ?? MAPS[0]
+}
+
+/** Height of the smooth, deterministic outer landscape at a world position. */
+export function terrainHeight(map: MapDef, x: number, z: number): number {
+  const terrain = map.terrain
+  if (!terrain) return 0
+
+  const radius = Math.hypot(x, z)
+  const edge = (map.bounds ?? 120) * 0.97
+  const t = Math.max(0, Math.min(1, (radius - terrain.flatRadius) / Math.max(1, edge - terrain.flatRadius)))
+  const blend = t * t * (3 - 2 * t)
+  const wave =
+    0.5 +
+    0.22 * Math.sin(x * 0.045 + terrain.seed) * Math.cos(z * 0.055 - terrain.seed) +
+    0.18 * Math.sin((x + z) * 0.025 + terrain.seed * 2)
+  return terrain.amplitude * Math.max(0, wave) * blend
 }

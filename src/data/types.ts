@@ -173,4 +173,6 @@ export interface MapDef {
   bestLoadouts: string
   /** Horizontal boundary clamp for the map (half-width). */
   bounds?: number
+  /** Smoothly rolling outer terrain; the center stays flat for buildings. */
+  terrain?: { amplitude: number; seed: number; flatRadius: number }
 }

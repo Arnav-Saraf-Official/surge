@@ -101,6 +101,7 @@ describe('movement', () => {
 
   it('attaches grapples to geometry and pulls the player toward it', () => {
     const { world, player } = flatMatch()
+    expect(player.stats.grappleRange).toBeGreaterThan(100)
     player.pos = { x: 0, y: 0.02, z: 24 }
     player.yaw = 0
     player.pitch = 0

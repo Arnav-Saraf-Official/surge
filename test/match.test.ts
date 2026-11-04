@@ -91,4 +91,23 @@ describe('headless match', () => {
     expect(world.match.ended).toBe(true)
     expect(world.match.winnerId).toBe(0)
   })
+
+  it('keeps training bots harmless and leaves the practice session running', () => {
+    const world = createWorld({
+      mapId: 'hollow-ward',
+      loadout,
+      upgrades: emptyUpgrades(),
+      botCount: 4,
+      difficulty: 'elite',
+      mode: 'training',
+      timeLimit: 1,
+      seed: 12,
+    })
+
+    for (let i = 0; i < 60 * 3; i++) stepWorld(world, emptyInput(), 1 / 60)
+
+    expect(world.match.ended).toBe(false)
+    expect(world.events.some((event) => event.type === 'shot' && event.playerId !== 0)).toBe(false)
+    expect(world.events.some((event) => event.type === 'damage' && event.playerId === 0)).toBe(false)
+  })
 })

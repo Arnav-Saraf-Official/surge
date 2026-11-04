@@ -3,7 +3,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import type { MapDef } from '../data/types'
+import type { BoxDef, MapDef } from '../data/types'
+import { terrainHeight } from '../data/maps'
 import { weapon as weaponDef } from '../data/weapons'
 import type { Vec3 } from '../core/math'
 import { clamp, damp, lenXZ, yawRight } from '../core/math'
@@ -28,6 +29,58 @@ import {
 
 const MAX_TRACERS = 128
 const MAX_RINGS = 16
+
+function buildTerrainMesh(map: MapDef): THREE.Mesh | null {
+  if (!map.terrain) return null
+
+  const bounds = map.bounds ?? 120
+  const segments = 96
+  const stride = segments + 1
+  const positions: number[] = []
+  const colors: number[] = []
+  const heights: number[] = []
+  const indices: number[] = []
+  const low = new THREE.Color(map.id === 'skyfoundry' ? 0x3c5635 : map.id === 'hollow-ward' ? 0x626449 : 0x5c5b50)
+  const high = new THREE.Color(map.id === 'skyfoundry' ? 0x73865a : map.id === 'hollow-ward' ? 0x8c8059 : 0x847b68)
+
+  for (let zIndex = 0; zIndex <= segments; zIndex++) {
+    const z = -bounds + (2 * bounds * zIndex) / segments
+    for (let xIndex = 0; xIndex <= segments; xIndex++) {
+      const x = -bounds + (2 * bounds * xIndex) / segments
+      const height = terrainHeight(map, x, z)
+      heights.push(height)
+      positions.push(x, height + 0.025, z)
+      const color = low.clone().lerp(high, Math.min(1, height / Math.max(1, map.terrain.amplitude)))
+      colors.push(color.r, color.g, color.b)
+    }
+  }
+
+  for (let zIndex = 0; zIndex < segments; zIndex++) {
+    for (let xIndex = 0; xIndex < segments; xIndex++) {
+      const a = zIndex * stride + xIndex
+      const b = a + 1
+      const c = a + stride
+      const d = c + 1
+      if (Math.max(heights[a], heights[b], heights[c], heights[d]) < 0.02) continue
+      indices.push(a, c, b, b, c, d)
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.receiveShadow = true
+  mesh.castShadow = true
+  return mesh
+}
+
+function isOrganicBox(box: BoxDef): boolean {
+  return box.kind === 'trunk' || box.kind === 'foliage'
+}
 
 interface Tracer {
   from: Vec3
@@ -504,6 +557,8 @@ export class GameRenderer {
     this.scene.remove(this.mapGroup)
     this.mapGroup = new THREE.Group()
     this.scene.add(this.mapGroup)
+    const terrain = buildTerrainMesh(map)
+    if (terrain) this.mapGroup.add(terrain)
 
     // Group boxes by composite material key: texture + color + glass transparency
     const byKey = new Map<
@@ -517,6 +572,7 @@ export class GameRenderer {
     >()
 
     for (const b of map.boxes) {
+      if (isOrganicBox(b)) continue
       const color = b.color ?? 0x333333
       const key = `${b.texture ?? 'notex'}_${b.kind ?? 'nokind'}_${color}`
       let entry = byKey.get(key)
@@ -634,6 +690,38 @@ export class GameRenderer {
         mesh.setMatrixAt(i, matrix)
       })
       mesh.instanceMatrix.needsUpdate = true
+      this.mapGroup.add(mesh)
+    }
+
+    const organicMaterials = new Map<string, THREE.Material>()
+    for (const b of map.boxes) {
+      if (!isOrganicBox(b)) continue
+      const color = b.color ?? 0x333333
+      const key = `${b.kind}_${color}`
+      let material = organicMaterials.get(key)
+      if (!material) {
+        material = new THREE.MeshStandardMaterial({
+          color,
+          map: b.kind === 'trunk' ? getTreeBarkTexture() : getJungleFoliageTexture(),
+          roughness: b.kind === 'trunk' ? 0.95 : 0.8,
+        })
+        organicMaterials.set(key, material)
+      }
+
+      const geometry =
+        b.kind === 'trunk'
+          ? new THREE.CylinderGeometry(
+              Math.min(b.size[0], b.size[2]) * 0.32,
+              Math.min(b.size[0], b.size[2]) * 0.5,
+              b.size[1],
+              10,
+            )
+          : new THREE.SphereGeometry(1, 12, 10)
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(...b.pos)
+      if (b.kind === 'foliage') mesh.scale.set(b.size[0] / 2, b.size[1] / 2, b.size[2] / 2)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
       this.mapGroup.add(mesh)
     }
 

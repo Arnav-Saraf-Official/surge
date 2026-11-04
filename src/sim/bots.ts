@@ -110,9 +110,11 @@ export function botInput(world: World, bot: Player): InputCmd {
 
     // Fire when the aim is roughly aligned and the line is clear.
     const aligned = Math.abs(angleDelta(brain.aimYaw, desiredYaw)) < 0.035 + (1 - skill) * 0.06
-    input.aim = (aligned || range > 10) && mode !== 'melee' && skill > 0.35
-    input.fire = aligned && range < (def?.fire.range ?? 90) && !segmentBlocked(world.colliders, eye, aimPoint)
-    input.melee = mode === 'melee' && range < 2.4 && aligned
+    if (world.match.mode !== 'training') {
+      input.aim = (aligned || range > 10) && mode !== 'melee' && skill > 0.35
+      input.fire = aligned && range < (def?.fire.range ?? 90) && !segmentBlocked(world.colliders, eye, aimPoint)
+      input.melee = mode === 'melee' && range < 2.4 && aligned
+    }
 
     // Slide to close distance, jump to break lines.
     if (world.time >= brain.nextJumpAt) {
@@ -126,11 +128,11 @@ export function botInput(world: World, bot: Player): InputCmd {
     }
 
     // Abilities: F for utility, T only when it can actually connect.
-    if (world.rng.next() < 0.02 + skill * 0.04) {
+    if (world.match.mode !== 'training' && world.rng.next() < 0.02 + skill * 0.04) {
       const status = abilityStatus(world, bot, 'F')
       if (status?.ready) input.abilityF = true
     }
-    if (world.rng.next() < 0.02 + skill * 0.05 && range < 45) {
+    if (world.match.mode !== 'training' && world.rng.next() < 0.02 + skill * 0.05 && range < 45) {
       const status = abilityStatus(world, bot, 'T')
       if (status?.ready) input.abilityT = true
     }

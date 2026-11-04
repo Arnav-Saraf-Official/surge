@@ -1,5 +1,6 @@
 import { clamp, damp, lenXZ, lookDir, rayAABB, v3, yawForward, yawRight } from '../core/math'
 import { EXPOSED_SPEED } from './damage'
+import { terrainHeight } from '../data/maps'
 import { CROUCH_HEIGHT, SLIDE_HEIGHT, STAND_HEIGHT, moveAndCollide, playerBox } from './collision'
 import type { InputCmd, Player, World } from './types'
 
@@ -168,7 +169,15 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
 
   // ---- Gravity and integration --------------------------------------
   player.vel.y = Math.max(-TERMINAL_VELOCITY, player.vel.y - GRAVITY * dt)
-  const result = moveAndCollide(world.colliders, player.pos, player.vel, dt, player.height)
+  const result = moveAndCollide(
+    world.colliders,
+    player.pos,
+    player.vel,
+    dt,
+    player.height,
+    undefined,
+    (x, z) => terrainHeight(world.map, x, z),
+  )
   player.pos = result.pos
   player.vel = result.vel
   player.onGround = result.onGround

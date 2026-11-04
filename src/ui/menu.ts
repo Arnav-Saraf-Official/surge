@@ -14,8 +14,74 @@ export interface MenuSettings {
   mapId: string
   botCount: number
   difficulty: BotDifficulty
+  mode: 'ffa' | 'training'
   loadout: Loadout
   upgrades: UpgradeSpend
+}
+
+const SETTINGS_STORAGE_KEY = 'surge.menu.settings.v1'
+
+function cloneSettings(settings: MenuSettings): MenuSettings {
+  return {
+    ...settings,
+    loadout: { slots: [...settings.loadout.slots] },
+    upgrades: { ...settings.upgrades },
+  }
+}
+
+export function parseSavedSettings(raw: string | null, defaults: MenuSettings): MenuSettings {
+  const fallback = () => cloneSettings(defaults)
+  if (!raw) return fallback()
+
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch (error) {
+    console.warn('Ignoring invalid saved SURGE settings.', error)
+    return fallback()
+  }
+  if (!value || typeof value !== 'object') return fallback()
+
+  const saved = value as { version?: unknown; settings?: unknown }
+  if (saved.version !== 1 || !saved.settings || typeof saved.settings !== 'object') return fallback()
+  const settings = saved.settings as Record<string, unknown>
+
+  const result = fallback()
+  if (typeof settings.mapId === 'string' && MAPS.some((map) => map.id === settings.mapId)) {
+    result.mapId = settings.mapId
+  }
+  if (Number.isInteger(settings.botCount) && Number(settings.botCount) >= 1 && Number(settings.botCount) <= 11) {
+    result.botCount = Number(settings.botCount)
+  }
+  if (settings.difficulty === 'easy' || settings.difficulty === 'normal' || settings.difficulty === 'hard' || settings.difficulty === 'elite') {
+    result.difficulty = settings.difficulty
+  }
+  if (settings.mode === 'ffa' || settings.mode === 'training') result.mode = settings.mode
+
+  const slots = (settings.loadout as { slots?: unknown } | null)?.slots
+  if (Array.isArray(slots) && slots.length === result.loadout.slots.length) {
+    const seen = new Set<string>()
+    result.loadout.slots = slots.map((id) => {
+      if (id === null) return null
+      if (typeof id !== 'string' || !WEAPONS.some((weapon) => weapon.id === id) || seen.has(id)) return null
+      seen.add(id)
+      return id
+    })
+  }
+
+  const upgrades = settings.upgrades
+  if (upgrades && typeof upgrades === 'object') {
+    const candidate = upgrades as Record<string, unknown>
+    const valid = UPGRADES.every(
+      (upgrade) => Number.isInteger(candidate[upgrade.key]) && Number(candidate[upgrade.key]) >= 0 && Number(candidate[upgrade.key]) <= 2,
+    )
+    const total = UPGRADES.reduce((sum, upgrade) => sum + Number(candidate[upgrade.key]), 0)
+    if (valid && total <= MAX_POINTS) {
+      for (const upgrade of UPGRADES) result.upgrades[upgrade.key] = Number(candidate[upgrade.key])
+    }
+  }
+
+  return result
 }
 
 type Screen = 'none' | 'main' | 'pause' | 'results'
@@ -35,8 +101,22 @@ export class Menu {
       mapId: MAPS[0].id,
       botCount: 7,
       difficulty: 'normal',
+      mode: 'ffa',
       loadout: { slots: ['reaper', 'breacher', 'gilded', 'ghostline', null, null, null] },
       upgrades: { vitality: 2, agility: 2, dexterity: 0, focus: 1, grapple: 0, might: 0 },
+    }
+    try {
+      this.settings = parseSavedSettings(localStorage.getItem(SETTINGS_STORAGE_KEY), this.settings)
+    } catch (error) {
+      console.warn('Unable to load saved SURGE settings.', error)
+    }
+  }
+
+  private persistSettings(): void {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ version: 1, settings: this.settings }))
+    } catch (error) {
+      console.warn('Unable to save SURGE settings.', error)
     }
   }
 
@@ -225,6 +305,12 @@ export class Menu {
                   .join('')}
               </select>
             </label>
+            <label>MODE
+              <select id="mode-select">
+                <option value="ffa" ${s.mode === 'ffa' ? 'selected' : ''}>FREE FOR ALL</option>
+                <option value="training" ${s.mode === 'training' ? 'selected' : ''}>TRAINING GROUND</option>
+              </select>
+            </label>
           </div>
           <div class="map-info">
             <b>${MAPS.find((m) => m.id === s.mapId)?.name}</b>
@@ -278,12 +364,14 @@ export class Menu {
     root.querySelectorAll<HTMLElement>('[data-up]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.settings.upgrades = spendPoint(this.settings.upgrades, btn.dataset.up as UpgradeKey)
+        this.persistSettings()
         this.renderMain()
       })
     })
     root.querySelectorAll<HTMLElement>('[data-down]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.settings.upgrades = refundPoint(this.settings.upgrades, btn.dataset.down as UpgradeKey)
+        this.persistSettings()
         this.renderMain()
       })
     })
@@ -296,6 +384,7 @@ export class Menu {
         slots[this.pickerSlot] = id
         this.settings.loadout = { slots }
         this.pickerSlot = -1
+        this.persistSettings()
         this.renderMain()
       })
     })
@@ -308,6 +397,7 @@ export class Menu {
       slots[this.pickerSlot] = null
       this.settings.loadout = { slots }
       this.pickerSlot = -1
+      this.persistSettings()
       this.renderMain()
     })
     root.querySelector('[data-action="randomize"]')?.addEventListener('click', () => {
@@ -317,27 +407,38 @@ export class Menu {
       const indices = [0, 1, 3, 5, 6].sort(() => Math.random() - 0.5).slice(0, count)
       indices.forEach((idx, i) => (slots[idx] = pool[i].id))
       this.settings.loadout = { slots }
+      this.persistSettings()
       this.renderMain()
     })
     root.querySelector('[data-action="clear"]')?.addEventListener('click', () => {
       this.settings.loadout = emptyLoadout()
+      this.persistSettings()
       this.renderMain()
     })
     root.querySelector<HTMLSelectElement>('#map-select')?.addEventListener('change', (e) => {
       this.settings.mapId = (e.target as HTMLSelectElement).value
+      this.persistSettings()
       this.renderMain()
     })
     root.querySelector<HTMLSelectElement>('#difficulty')?.addEventListener('change', (e) => {
       this.settings.difficulty = (e.target as HTMLSelectElement).value as BotDifficulty
+      this.persistSettings()
+      this.renderMain()
+    })
+    root.querySelector<HTMLSelectElement>('#mode-select')?.addEventListener('change', (e) => {
+      this.settings.mode = (e.target as HTMLSelectElement).value as MenuSettings['mode']
+      this.persistSettings()
       this.renderMain()
     })
     const range = root.querySelector<HTMLInputElement>('#bot-count')
     range?.addEventListener('input', () => {
       this.settings.botCount = Number(range.value)
+      this.persistSettings()
       const label = root.querySelector('#bot-count-label')
       if (label) label.textContent = range.value
     })
     root.querySelector('[data-action="start"]')?.addEventListener('click', () => {
+      this.persistSettings()
       this.onStart?.(this.settings)
     })
   }

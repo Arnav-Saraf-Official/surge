@@ -186,7 +186,7 @@ export interface World {
 }
 
 export interface MatchState {
-  mode: 'ffa'
+  mode: 'ffa' | 'training'
   scoreLimit: number
   timeLimit: number
   startedAt: number

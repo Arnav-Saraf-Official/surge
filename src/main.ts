@@ -32,6 +32,7 @@ function startMatch(): void {
     upgrades: menu.settings.upgrades,
     botCount: menu.settings.botCount,
     difficulty: menu.settings.difficulty,
+    mode: menu.settings.mode,
   })
   renderer.setMap(world.map)
   hud.reset(0)

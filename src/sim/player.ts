@@ -66,7 +66,7 @@ export function deriveStats(loadout: Loadout, upgrades: Record<UpgradeKey, numbe
     reloadMult,
     cdr,
     slideMult: (1 + stacks.mobility * 0.05) * (1 + upgrades.agility * 0.05),
-    grappleRange: 30 + upgrades.grapple * 4,
+    grappleRange: 115 + upgrades.grapple * 4,
     grappleCd: 4 * (1 - upgrades.grapple * 0.08),
     damageMult: 1 + 0.1 * packageScale + upgrades.might * 0.03,
     tChargeMult: 1 + upgrades.focus * 0.03,
