@@ -129,8 +129,9 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
   }
 
   // ---- Horizontal acceleration --------------------------------------
+  player.aiming = !!input.aim
   const grounded = player.onGround
-  player.sprinting = input.sprint && grounded && !player.sliding && !input.crouch && input.moveZ > 0.15 && !deployed
+  player.sprinting = input.sprint && !player.aiming && grounded && !player.sliding && !input.crouch && input.moveZ > 0.15 && !deployed
 
   if (deployed) {
     player.vel.x = 0

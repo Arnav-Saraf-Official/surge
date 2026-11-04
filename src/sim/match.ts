@@ -55,6 +55,8 @@ export const BOT_LOADOUTS: string[][] = [
   ['aurora', 'thunderclap', 'scythe'],
   ['vortex', 'phantom', 'cyclone'],
   ['specter', 'scythe', 'aurora'],
+  ['verdict', 'tempest', 'kris'],
+  ['cinder', 'verdict', 'ghostline'],
 ]
 
 function collidersFor(map: MapDef) {

@@ -110,6 +110,7 @@ export function botInput(world: World, bot: Player): InputCmd {
 
     // Fire when the aim is roughly aligned and the line is clear.
     const aligned = Math.abs(angleDelta(brain.aimYaw, desiredYaw)) < 0.035 + (1 - skill) * 0.06
+    input.aim = (aligned || range > 10) && mode !== 'melee' && skill > 0.35
     input.fire = aligned && range < (def?.fire.range ?? 90) && !segmentBlocked(world.colliders, eye, aimPoint)
     input.melee = mode === 'melee' && range < 2.4 && aligned
 

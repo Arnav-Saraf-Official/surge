@@ -39,9 +39,13 @@ function pierceAllowance(player: Player): number {
 export function currentSpread(player: Player, def: WeaponDef): number {
   let spread = def.fire.spread
   const speed = lenXZ(player.vel)
-  if (speed > 0.5 && !player.sliding) spread *= 1 + (speed / SPRINT_SPEED) * 0.9
-  if (!player.onGround) spread *= 1.6
-  if (player.sliding) spread *= 1.15
+  if (player.aiming) {
+    spread *= 0.25
+  } else {
+    if (speed > 0.5 && !player.sliding) spread *= 1 + (speed / SPRINT_SPEED) * 2.2
+    if (!player.onGround) spread *= 1.8
+    if (player.sliding) spread *= 1.3
+  }
   if (player.deployed) spread *= 0.06
   spread *= effectMult(player, 'accuracy')
   return spread

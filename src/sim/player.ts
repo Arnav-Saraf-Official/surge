@@ -152,6 +152,7 @@ export function createPlayer(opts: CreatePlayerOptions): Player {
     grappling: false,
     wasAirborne: false,
     deployed: false,
+    aiming: false,
     health: stats.maxHealth,
     alive: true,
     respawnAt: 0,

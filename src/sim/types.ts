@@ -96,6 +96,7 @@ export interface Player {
   grappling: boolean
   wasAirborne: boolean
   deployed: boolean
+  aiming: boolean
 
   health: number
   alive: boolean
@@ -229,6 +230,7 @@ export interface InputCmd {
   jump: boolean
   sprint: boolean
   crouch: boolean
+  aim: boolean
   /** Rising-edge buttons, consumed by the sim each tick. */
   slide: boolean
   grappleL: boolean
@@ -255,6 +257,7 @@ export const emptyInput = (): InputCmd => ({
   jump: false,
   sprint: false,
   crouch: false,
+  aim: false,
   slide: false,
   grappleL: false,
   grappleR: false,

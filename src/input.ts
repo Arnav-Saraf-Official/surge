@@ -15,9 +15,11 @@ export class Input {
   private keys = new Set<string>()
   private pressed = new Set<string>()
   private mouseDown = false
+  private rightMouseDown = false
   private mouseClicked = false
   private wheel = 0
   private canvas: HTMLElement | null = null
+  aimSensMult = 1.0
   paused = true
 
   attach(canvas: HTMLElement): void {
@@ -27,8 +29,13 @@ export class Input {
     window.addEventListener('mousemove', this.onMouseMove)
     window.addEventListener('mousedown', this.onMouseDown)
     window.addEventListener('mouseup', this.onMouseUp)
+    window.addEventListener('contextmenu', this.onContextMenu)
     window.addEventListener('wheel', this.onWheel, { passive: true })
     window.addEventListener('blur', this.onBlur)
+  }
+
+  private onContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
   }
 
   requestLock(): void {
@@ -63,6 +70,7 @@ export class Input {
   private onBlur = () => {
     this.keys.clear()
     this.mouseDown = false
+    this.rightMouseDown = false
   }
 
   private onMouseMove = (e: MouseEvent) => {
@@ -76,10 +84,12 @@ export class Input {
       this.mouseDown = true
       this.mouseClicked = true
     }
+    if (e.button === 2) this.rightMouseDown = true
   }
 
   private onMouseUp = (e: MouseEvent) => {
     if (e.button === 0) this.mouseDown = false
+    if (e.button === 2) this.rightMouseDown = false
   }
 
   private onWheel = (e: WheelEvent) => {
@@ -115,6 +125,7 @@ export class Input {
     cmd.slide = this.tapped('KeyC') && cmd.sprint
     cmd.jump = this.tapped('Space')
     cmd.fire = this.mouseDown
+    cmd.aim = this.rightMouseDown
     cmd.grappleL = this.held('KeyQ')
     cmd.grappleR = this.held('KeyE')
     cmd.abilityF = this.tapped('KeyF')

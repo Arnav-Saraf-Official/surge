@@ -16,6 +16,9 @@ function createTileableCanvas(width: number, height: number, draw: (ctx: CanvasR
   const texture = new THREE.CanvasTexture(canvas)
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.RepeatWrapping
+  // Canvas art is authored in sRGB; without this PBR lighting washes the colours out.
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 4
   return texture
 }
 
@@ -373,6 +376,32 @@ export function getWeaponTexture(colorHex: string, pattern: 'camo' | 'carbon' | 
         ctx.arc(cx, cy, 4, 0, Math.PI * 2)
         ctx.fill()
       }
+    } else if (pattern === 'camo') {
+      // Layered camouflage blotches with a couple of darker foliage shades.
+      ctx.fillStyle = '#343a2d'
+      ctx.fillRect(0, 0, w, h)
+      const blotches = ['#252b20', '#48503c', '#5b624a', colorHex]
+      for (let i = 0; i < 46; i++) {
+        ctx.fillStyle = blotches[i % blotches.length]
+        ctx.globalAlpha = i % 4 === 3 ? 0.35 : 1
+        ctx.beginPath()
+        ctx.ellipse(
+          Math.random() * w,
+          Math.random() * h,
+          14 + Math.random() * 30,
+          8 + Math.random() * 18,
+          Math.random() * Math.PI,
+          0,
+          Math.PI * 2,
+        )
+        ctx.fill()
+      }
+      ctx.globalAlpha = 1
+      // Dark stencilled unit marks over the camo.
+      ctx.fillStyle = 'rgba(12,14,10,0.55)'
+      ctx.font = 'bold 20px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText('SURGE', w / 2, h / 2 + 7)
     } else {
       // Tactical panel lines
       ctx.fillStyle = '#2b3340'
@@ -384,6 +413,92 @@ export function getWeaponTexture(colorHex: string, pattern: 'camo' | 'carbon' | 
       ctx.fillRect(12, 12, w - 24, 6)
       ctx.fillRect(12, h - 20, w - 24, 6)
     }
+    // Edge wear and scratches so every weapon skin reads as used metal.
+    for (let i = 0; i < 90; i++) {
+      ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(220,226,235,0.10)' : 'rgba(0,0,0,0.22)'
+      ctx.lineWidth = Math.random() > 0.7 ? 1.6 : 0.8
+      const x = Math.random() * w
+      const y = Math.random() * h
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + 4 + Math.random() * 22, y + (Math.random() - 0.5) * 6)
+      ctx.stroke()
+    }
+    // Metal corner highlight pass.
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    ctx.lineWidth = 4
+    ctx.strokeRect(2, 2, w - 4, h - 4)
+  })
+  textureCache.set(key, tex)
+  return tex
+}
+
+/** Tinted vehicle / aircraft canopy glass with reflective streaks. */
+export function getGlassTexture(): THREE.CanvasTexture {
+  if (textureCache.has('glass')) return textureCache.get('glass')!
+  const tex = createTileableCanvas(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#141c26'
+    ctx.fillRect(0, 0, w, h)
+    // Angled reflections.
+    const glare = ctx.createLinearGradient(0, h, w, 0)
+    glare.addColorStop(0, 'rgba(120,170,210,0)')
+    glare.addColorStop(0.45, 'rgba(150,200,235,0.28)')
+    glare.addColorStop(0.55, 'rgba(90,130,170,0.10)')
+    glare.addColorStop(1, 'rgba(180,220,255,0.02)')
+    ctx.fillStyle = glare
+    ctx.fillRect(0, 0, w, h)
+    // Window frame grid.
+    ctx.strokeStyle = 'rgba(8,12,18,0.85)'
+    ctx.lineWidth = 4
+    ctx.strokeRect(2, 2, w - 4, h - 4)
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(w / 2, 0)
+    ctx.lineTo(w / 2, h)
+    ctx.moveTo(0, h / 2)
+    ctx.lineTo(w, h / 2)
+    ctx.stroke()
+  })
+  tex.repeat.set(1, 1)
+  textureCache.set('glass', tex)
+  return tex
+}
+
+/** Armoured helmet shell for the third-person player models. */
+export function getHelmetTexture(isEnemy: boolean): THREE.CanvasTexture {
+  const key = isEnemy ? 'helmetEnemy' : 'helmetSelf'
+  if (textureCache.has(key)) return textureCache.get(key)!
+  const accent = isEnemy ? '#ff3b2f' : '#2f9bff'
+  const tex = createTileableCanvas(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = isEnemy ? '#241a18' : '#171e28'
+    ctx.fillRect(0, 0, w, h)
+    // Carbon shell weave.
+    for (let y = 0; y < h; y += 8) {
+      for (let x = 0; x < w; x += 8) {
+        ctx.fillStyle = (x + y) % 16 === 0 ? '#2b323d' : '#1d242e'
+        ctx.fillRect(x, y, 7, 7)
+      }
+    }
+    // Armour plates and rivets.
+    ctx.fillStyle = 'rgba(70,82,98,0.55)'
+    ctx.fillRect(14, 18, w - 28, 34)
+    ctx.fillRect(20, 60, w - 40, 40)
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+    ctx.lineWidth = 3
+    ctx.strokeRect(14, 18, w - 28, 34)
+    ctx.strokeRect(20, 60, w - 40, 40)
+    // Faction stripe.
+    ctx.fillStyle = accent
+    ctx.fillRect(14, 54, w - 28, 4)
+    for (let x = 22; x < w - 14; x += 18) {
+      ctx.fillStyle = 'rgba(200,210,225,0.5)'
+      ctx.beginPath()
+      ctx.arc(x, 24, 2.2, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // Side vents.
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    for (let i = 0; i < 4; i++) ctx.fillRect(22 + i * 6, 66, 3, 28)
   })
   textureCache.set(key, tex)
   return tex

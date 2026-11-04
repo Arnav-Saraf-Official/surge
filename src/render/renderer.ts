@@ -12,13 +12,16 @@ import {
   getBrickTexture,
   getConcreteTexture,
   getCorrugatedMetalTexture,
+  getGlassTexture,
   getHazardStripeTexture,
+  getHelmetTexture,
   getJungleFoliageTexture,
   getMetalPanelTexture,
   getPlayerArmorTexture,
   getRoofGravelTexture,
   getTreeBarkTexture,
   getVisorEmissiveTexture,
+  getWeaponTexture,
   getWoodCrateTexture,
 } from './textures'
 
@@ -49,6 +52,28 @@ interface PlayerMesh {
   target: Vec3
 }
 
+/** Accent colour + surface pattern for each weapon's procedural skin. */
+const WEAPON_SKINS: Record<string, { accent: string; pattern: 'camo' | 'carbon' | 'tech' }> = {
+  reaper: { accent: '#ff8a3c', pattern: 'camo' },
+  breacher: { accent: '#ff5a4d', pattern: 'camo' },
+  warhound: { accent: '#ffc85a', pattern: 'camo' },
+  gilded: { accent: '#ffd54a', pattern: 'tech' },
+  ghostline: { accent: '#63e6ff', pattern: 'tech' },
+  katana: { accent: '#4de8ff', pattern: 'carbon' },
+  hellfire: { accent: '#ff8a3c', pattern: 'camo' },
+  phantom: { accent: '#22e6ff', pattern: 'tech' },
+  cyclone: { accent: '#5cff6a', pattern: 'carbon' },
+  thunderclap: { accent: '#b06bff', pattern: 'tech' },
+  specter: { accent: '#ff3b5c', pattern: 'carbon' },
+  aurora: { accent: '#8fd8ff', pattern: 'tech' },
+  scythe: { accent: '#ff7a2f', pattern: 'carbon' },
+  vortex: { accent: '#ffb648', pattern: 'tech' },
+  verdict: { accent: '#66e0c8', pattern: 'camo' },
+  tempest: { accent: '#ffb14d', pattern: 'camo' },
+  cinder: { accent: '#ff6a33', pattern: 'camo' },
+  kris: { accent: '#ff5ce1', pattern: 'carbon' },
+}
+
 /** Builds an intricate first-person viewmodel with textured surfaces and glowing blooming accents. */
 function buildViewModel(weaponId: string): THREE.Group {
   const group = new THREE.Group()
@@ -61,6 +86,15 @@ function buildViewModel(weaponId: string): THREE.Group {
   const carbonFiber = new THREE.MeshStandardMaterial({ color: 0x12151b, roughness: 0.25, metalness: 0.6 })
   const goldMetal = new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.2, metalness: 0.9 })
   const polishedSteel = new THREE.MeshStandardMaterial({ color: 0x9aa4b2, roughness: 0.15, metalness: 0.95 })
+
+  // Bind the procedural weapon skin so every surface carries real material detail.
+  const skin = WEAPON_SKINS[weaponId] ?? { accent: '#7fd4ff', pattern: 'carbon' as const }
+  gunmetal.map = getWeaponTexture(skin.accent, skin.pattern)
+  darkMetal.map = getWeaponTexture(skin.accent, 'carbon')
+  carbonFiber.map = getWeaponTexture(skin.accent, 'carbon')
+  tacticalTan.map = getWeaponTexture(skin.accent, 'camo')
+  oliveDrab.map = getWeaponTexture(skin.accent, 'camo')
+  polishedSteel.map = getWeaponTexture(skin.accent, 'tech')
 
   // Glowing bloom materials (emissive intensity > 2.5 creates intense UnrealBloomPass blooming)
   const bloomAmber = new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff7700, emissiveIntensity: 3.2, roughness: 0.2 })
@@ -238,6 +272,43 @@ function buildViewModel(weaponId: string): THREE.Group {
       }
       break
 
+    case 'verdict': // Marksman Rifle "Verdict"
+      add(0.09, 0.11, 1.3, 0, 0, -0.42, tacticalTan) // chassis
+      add(0.055, 0.055, 0.95, 0, 0.02, -1.25, gunmetal) // long accelerator barrel
+      add(0.1, 0.12, 0.4, 0, 0.13, -0.2, darkMetal) // scope body
+      add(0.08, 0.08, 0.02, 0, 0.13, -0.41, bloomIceBlue) // glowing scope lens
+      add(0.03, 0.03, 0.6, 0, 0.06, -0.9, bloomCyan) // glowing under-barrel rail
+      add(0.08, 0.2, 0.1, 0, -0.15, -0.2, darkMetal) // box magazine
+      add(0.06, 0.1, 0.28, 0, -0.05, 0.22, carbonFiber) // precision stock
+      break
+
+    case 'tempest': // LMG "Tempest"
+      add(0.16, 0.17, 1.1, 0, 0.02, -0.35, oliveDrab) // heavy receiver
+      add(0.25, 0.22, 0.22, 0.14, -0.1, -0.18, darkMetal) // belt feed box
+      add(0.08, 0.08, 0.55, 0, 0.05, -1.0, gunmetal) // barrel shroud
+      add(0.05, 0.05, 0.7, 0, 0.15, -0.62, bloomAmber) // glowing heat rail
+      add(0.1, 0.04, 0.12, 0.02, 0.12, -0.1, bloomGold) // ammo counter
+      add(0.06, 0.14, 0.1, 0, -0.15, 0.05, carbonFiber) // pistol grip
+      break
+
+    case 'cinder': // Grenade Launcher "Cinder"
+      add(0.17, 0.17, 0.95, 0, 0.04, -0.3, oliveDrab) // launcher body
+      add(0.22, 0.22, 0.26, 0, 0.04, -0.82, darkMetal) // revolving cylinder
+      add(0.05, 0.05, 0.05, -0.06, 0.04, -0.96, bloomOrange) // loaded warhead
+      add(0.05, 0.05, 0.05, 0.06, 0.04, -0.96, bloomOrange) // loaded warhead
+      add(0.08, 0.16, 0.12, 0, -0.14, -0.05, carbonFiber) // grip
+      add(0.12, 0.1, 0.28, 0, -0.04, 0.28, tacticalTan) // folding stock
+      add(0.03, 0.03, 0.4, 0, 0.13, -0.45, bloomAmber) // targeting strip
+      break
+
+    case 'kris': // Dagger "Kris"
+      add(0.04, 0.03, 0.3, 0.02, -0.06, -0.12, carbonFiber) // wrapped handle
+      add(0.12, 0.03, 0.04, 0.02, -0.06, -0.28, goldMetal) // cross guard
+      add(0.015, 0.06, 0.55, 0.02, -0.04, -0.6, polishedSteel) // wavy blade
+      add(0.008, 0.02, 0.5, 0.02, -0.04, -0.62, bloomPurple) // glowing venom edge
+      add(0.03, 0.03, 0.03, 0.02, -0.05, 0.06, bloomPurple) // pommel core
+      break
+
     default: // Generic fallback
       add(0.1, 0.11, 0.8, 0, 0, -0.32, gunmetal)
       add(0.06, 0.06, 0.45, 0, 0.02, -0.8, darkMetal)
@@ -278,6 +349,8 @@ export class GameRenderer {
   private projectileMesh: THREE.InstancedMesh | null = null
   private sun: THREE.DirectionalLight
   private hemiLight: THREE.HemisphereLight
+  private fillLight: THREE.DirectionalLight
+  private ambientLight: THREE.AmbientLight
   private bobPhase = 0
   private shake = 0
   private fovKick = 0
@@ -294,7 +367,7 @@ export class GameRenderer {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.15
+    this.renderer.toneMappingExposure = 1.22
 
     this.camera = new THREE.PerspectiveCamera(100, 1, 0.05, 500)
     this.camera.rotation.order = 'YXZ'
@@ -307,6 +380,7 @@ export class GameRenderer {
     this.sun.shadow.camera.near = 1
     this.sun.shadow.camera.far = 180
     this.sun.shadow.bias = -0.0005
+    this.sun.shadow.radius = 2.5
     const cam = this.sun.shadow.camera as THREE.OrthographicCamera
     cam.left = -65
     cam.right = 65
@@ -316,6 +390,13 @@ export class GameRenderer {
 
     this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x111622, 0.6)
     this.scene.add(this.hemiLight)
+
+    // Fill + ambient lift the shadow side of geometry so detail stays readable.
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.12)
+    this.scene.add(this.ambientLight)
+    this.fillLight = new THREE.DirectionalLight(0xffffff, 0.35)
+    this.fillLight.position.set(-40, 30, -50)
+    this.scene.add(this.fillLight)
 
     // Dynamic Muzzle Light & Explosion Light
     this.muzzleLight = new THREE.PointLight(0xffc56e, 0, 16, 2)
@@ -392,7 +473,13 @@ export class GameRenderer {
     this.scene.fog = new THREE.Fog(map.fog.color, map.fog.near, map.fog.far)
     this.scene.background = new THREE.Color(map.sky)
     this.hemiLight.color.setHex(map.ambient.color)
+    this.hemiLight.groundColor.setHex(map.sky)
     this.hemiLight.intensity = map.ambient.intensity
+    this.ambientLight.color.setHex(map.ambient.color)
+    this.ambientLight.intensity = 0.16 * map.ambient.intensity
+    this.fillLight.color.setHex(map.sun.color)
+    this.fillLight.intensity = map.sun.intensity * 0.45
+    this.fillLight.position.set(-map.sun.dir[0] * 55, 45, -map.sun.dir[2] * 55)
     this.sun.color.setHex(map.sun.color)
     this.sun.intensity = map.sun.intensity
     this.sun.position.set(map.sun.dir[0] * 70, map.sun.dir[1] * 70, map.sun.dir[2] * 70)
@@ -483,6 +570,34 @@ export class GameRenderer {
           mat.map = getCorrugatedMetalTexture()
           mat.roughness = 0.4
           mat.metalness = 0.75
+        } else if (texture === 'glass') {
+          mat.map = getGlassTexture()
+          mat.roughness = 0.12
+          mat.metalness = 0.85
+        }
+
+        // Scale texture tiling to the group's real-world dimensions so large
+        // walls and floors no longer smear a single tile across the surface.
+        if (mat.map) {
+          let span = 0
+          let rise = 0
+          for (const b of boxes) {
+            span += Math.max(b.size[0], b.size[2])
+            rise += b.size[1]
+          }
+          span /= Math.max(1, boxes.length)
+          rise /= Math.max(1, boxes.length)
+          const horizontal = kind === 'floor' || kind === 'roof' || kind === 'catwalk'
+          const tex = mat.map.clone()
+          tex.needsUpdate = true
+          tex.wrapS = THREE.RepeatWrapping
+          tex.wrapT = THREE.RepeatWrapping
+          const rx = clamp((mat.map.repeat.x * span) / 6, 1, 18)
+          const ry = horizontal
+            ? clamp((mat.map.repeat.y * span) / 6, 1, 18)
+            : clamp((mat.map.repeat.y * rise) / 4, 1, 12)
+          tex.repeat.set(rx, ry)
+          mat.map = tex
         }
         material = mat
       }
@@ -607,7 +722,8 @@ export class GameRenderer {
 
       // Armored tactical helmet
       const headMat = new THREE.MeshStandardMaterial({
-        color: isEnemy ? 0x2e1d1b : 0x1d2633,
+        map: getHelmetTexture(isEnemy),
+        color: 0xffffff,
         roughness: 0.5,
         metalness: 0.5,
       })
@@ -628,19 +744,39 @@ export class GameRenderer {
       visor.position.set(0, 1.64, -0.2)
 
       // Shoulder armor pads
-      const padMat = new THREE.MeshStandardMaterial({ color: isEnemy ? 0x6e2820 : 0x224870, roughness: 0.4, metalness: 0.6 })
+      const padMat = new THREE.MeshStandardMaterial({
+        map: getPlayerArmorTexture(isEnemy),
+        color: isEnemy ? 0xc0503f : 0x5a9bd8,
+        roughness: 0.4,
+        metalness: 0.6,
+      })
       const padL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.18), padMat)
       padL.position.set(-0.38, 1.35, 0)
       const padR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.18), padMat)
       padR.position.set(0.38, 1.35, 0)
 
       // Third-person weapon model carried by bot/player
-      const gunMat = new THREE.MeshStandardMaterial({ color: 0x1f242c, roughness: 0.4, metalness: 0.8 })
+      const gunMat = new THREE.MeshStandardMaterial({
+        map: getWeaponTexture('#9fb4c8', 'carbon'),
+        color: 0x8b98a8,
+        roughness: 0.4,
+        metalness: 0.8,
+      })
       const gun = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.65), gunMat)
       gun.position.set(0.26, 1.05, -0.25)
       gun.castShadow = true
 
-      group.add(body, head, visor, padL, padR, gun)
+      // Chest status core, bright enough to bloom and read at a distance.
+      const coreMat = new THREE.MeshStandardMaterial({
+        color: visorColor,
+        emissive: visorColor,
+        emissiveIntensity: 2.4,
+        roughness: 0.3,
+      })
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.04), coreMat)
+      core.position.set(0, 1.16, -0.34)
+
+      group.add(body, head, visor, padL, padR, gun, core)
       this.scene.add(group)
       mesh = { group, body, head, visor, gun, target: { ...player.pos } }
       this.players.set(id, mesh)
