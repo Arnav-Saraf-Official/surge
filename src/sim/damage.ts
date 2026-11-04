@@ -7,6 +7,7 @@ export const RESPAWN_TIME = 3
 export const EXPOSED_TIME = 5
 export const EXPOSED_DAMAGE_TAKEN = 1.25
 export const EXPOSED_SPEED = 0.8
+const NORMAL_BULLET_DAMAGE_MULT = 0.8
 
 export interface DamageOpts {
   headshot?: boolean
@@ -96,6 +97,7 @@ export function applyDamage(
   if (raw <= 0) return 0
 
   let amount = raw * damageResistance(victim)
+  if (opts.source === 'bullet' && !opts.lethal) amount *= NORMAL_BULLET_DAMAGE_MULT
   if (isExposed(victim, world.time)) amount *= EXPOSED_DAMAGE_TAKEN
   if (opts.nonLethalFrac !== undefined) {
     const allowed = Math.min(opts.nonLethalFrac * victim.stats.maxHealth, victim.health - 1)

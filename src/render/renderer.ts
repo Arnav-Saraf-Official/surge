@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import type { MapDef } from '../data/types'
+import { weapon as weaponDef } from '../data/weapons'
 import type { Vec3 } from '../core/math'
 import { clamp, damp, lenXZ } from '../core/math'
 import type { SimEvent, World } from '../sim/types'
@@ -49,6 +50,7 @@ interface PlayerMesh {
   head: THREE.Mesh
   visor: THREE.Mesh
   gun?: THREE.Mesh
+  muzzleFlash: THREE.Mesh
   target: Vec3
 }
 
@@ -341,10 +343,8 @@ export class GameRenderer {
   private viewmodelHolder = new THREE.Group()
   private viewmodel: THREE.Group | null = null
   private currentWeaponId = ''
-  private muzzleFlash: THREE.Mesh
-  private muzzleLight: THREE.PointLight
+  private enemyMuzzleTimers = new Map<number, number>()
   private explosionLight: THREE.PointLight
-  private muzzleTimer = 0
   private orbMesh: THREE.InstancedMesh | null = null
   private projectileMesh: THREE.InstancedMesh | null = null
   private sun: THREE.DirectionalLight
@@ -398,11 +398,7 @@ export class GameRenderer {
     this.fillLight.position.set(-40, 30, -50)
     this.scene.add(this.fillLight)
 
-    // Dynamic Muzzle Light & Explosion Light
-    this.muzzleLight = new THREE.PointLight(0xffc56e, 0, 16, 2)
-    this.muzzleLight.position.set(0.02, 0.02, -1.0)
-    this.viewmodelHolder.add(this.muzzleLight)
-
+    // Explosion light
     this.explosionLight = new THREE.PointLight(0xff7722, 0, 30, 2)
     this.scene.add(this.explosionLight)
 
@@ -424,20 +420,6 @@ export class GameRenderer {
     )
     this.tracerLines.frustumCulled = false
     this.scene.add(this.tracerLines)
-
-    // Muzzle flash with additive blooming plane
-    this.muzzleFlash = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.45, 0.45),
-      new THREE.MeshBasicMaterial({
-        color: 0xffefb8,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    )
-    this.muzzleFlash.position.set(0.02, 0.02, -1.1)
-    this.muzzleFlash.visible = false
-    this.viewmodelHolder.add(this.muzzleFlash)
 
     // Post-processing EffectComposer with UnrealBloomPass
     this.composer = new EffectComposer(this.renderer)
@@ -476,9 +458,9 @@ export class GameRenderer {
     this.hemiLight.groundColor.setHex(map.sky)
     this.hemiLight.intensity = map.ambient.intensity
     this.ambientLight.color.setHex(map.ambient.color)
-    this.ambientLight.intensity = 0.16 * map.ambient.intensity
+    this.ambientLight.intensity = 0.75 * map.ambient.intensity
     this.fillLight.color.setHex(map.sun.color)
-    this.fillLight.intensity = map.sun.intensity * 0.45
+    this.fillLight.intensity = map.sun.intensity * 0.7
     this.fillLight.position.set(-map.sun.dir[0] * 55, 45, -map.sun.dir[2] * 55)
     this.sun.color.setHex(map.sun.color)
     this.sun.intensity = map.sun.intensity
@@ -660,16 +642,19 @@ export class GameRenderer {
 
   handleEvents(events: SimEvent[]): void {
     for (const e of events) {
-      if (e.type === 'shot' && e.tracer) {
-        this.tracers.push({
-          from: { ...e.from },
-          to: { ...e.to },
-          life: 0.08,
-          maxLife: 0.08,
-          color: e.color,
-        })
-        this.muzzleTimer = 0.055
-        this.muzzleLight.intensity = 2.8
+      if (e.type === 'shot') {
+        if (e.tracer) {
+          this.tracers.push({
+            from: { ...e.from },
+            to: { ...e.to },
+            life: 0.08,
+            maxLife: 0.08,
+            color: e.color,
+          })
+        }
+        if (e.playerId !== 0 && weaponDef(e.weaponId).type !== 'blade') {
+          this.enemyMuzzleTimers.set(e.playerId, 0.045)
+        }
       } else if (e.type === 'explosion') {
         this.spawnRing(e.pos, e.radius)
         this.shake = Math.min(0.55, this.shake + 0.3)
@@ -766,6 +751,13 @@ export class GameRenderer {
       gun.position.set(0.26, 1.05, -0.25)
       gun.castShadow = true
 
+      const muzzleFlash = new THREE.Mesh(
+        new THREE.SphereGeometry(0.025, 6, 4),
+        new THREE.MeshBasicMaterial({ color: 0xffc56e, toneMapped: false }),
+      )
+      muzzleFlash.position.set(0.26, 1.05, -0.62)
+      muzzleFlash.visible = false
+
       // Chest status core, bright enough to bloom and read at a distance.
       const coreMat = new THREE.MeshStandardMaterial({
         color: visorColor,
@@ -776,9 +768,9 @@ export class GameRenderer {
       const core = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.04), coreMat)
       core.position.set(0, 1.16, -0.34)
 
-      group.add(body, head, visor, padL, padR, gun, core)
+      group.add(body, head, visor, padL, padR, gun, muzzleFlash, core)
       this.scene.add(group)
-      mesh = { group, body, head, visor, gun, target: { ...player.pos } }
+      mesh = { group, body, head, visor, gun, muzzleFlash, target: { ...player.pos } }
       this.players.set(id, mesh)
     }
 
@@ -788,6 +780,10 @@ export class GameRenderer {
     mesh.group.rotation.y = player.yaw
     const visible = player.alive && id !== 0
     mesh.group.visible = visible
+    const muzzleTimer = Math.max(0, (this.enemyMuzzleTimers.get(id) ?? 0) - dt)
+    if (muzzleTimer > 0) this.enemyMuzzleTimers.set(id, muzzleTimer)
+    else this.enemyMuzzleTimers.delete(id)
+    mesh.muzzleFlash.visible = visible && muzzleTimer > 0
     const translucent = player.invisibility > 0
     const mat = mesh.body.material as THREE.MeshStandardMaterial
     mat.opacity = translucent ? 0.08 : 1
@@ -837,17 +833,6 @@ export class GameRenderer {
       if (local.sliding) vm.position.y -= 0.04
       if (local.deployed) vm.position.x = 0.02
       if (this.viewmodel) this.viewmodel.visible = local.alive
-
-      // Muzzle flash & dynamic light decay
-      this.muzzleTimer = Math.max(0, this.muzzleTimer - dt)
-      this.muzzleFlash.visible = this.muzzleTimer > 0
-      if (this.muzzleFlash.visible) {
-        this.muzzleFlash.rotation.z = Math.random() * Math.PI
-        const s = 0.85 + Math.random() * 0.55
-        this.muzzleFlash.scale.set(s, s, s)
-      } else {
-        this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 45)
-      }
 
       // Explosion light decay
       if (this.explosionLight.intensity > 0) {

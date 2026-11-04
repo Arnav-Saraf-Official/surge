@@ -52,6 +52,12 @@ describe('wall penetration table', () => {
 })
 
 describe('damage and lethal rules', () => {
+  it('reduces normal bullet damage', () => {
+    const { world, shooter, victim } = arena()
+    const dealt = applyDamage(world, victim, shooter.id, 40, { source: 'bullet', weaponId: 'gilded' })
+    expect(dealt).toBeCloseTo(32, 5)
+  })
+
   it('kills on a lethal hit', () => {
     const { world, shooter, victim } = arena()
     applyDamage(world, victim, shooter.id, 10, { source: 'bullet', weaponId: 'gilded', lethal: true, headshot: true })
@@ -77,7 +83,7 @@ describe('damage and lethal rules', () => {
     const { world, shooter, victim } = arena()
     victim.exposedUntil = world.time + EXPOSED_TIME
     const dealt = applyDamage(world, victim, shooter.id, 40, { source: 'bullet', weaponId: 'gilded' })
-    expect(dealt).toBeCloseTo(50, 5)
+    expect(dealt).toBeCloseTo(40, 5)
   })
 
   it('applies Exposed when a lethal window expires without a kill', () => {
