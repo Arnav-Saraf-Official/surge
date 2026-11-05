@@ -5,6 +5,9 @@ import type { Condition, UpgradeKey } from '../data/types'
 /** Reasons a damage event happened, used for style points and kill feed text. */
 export type DamageSource = 'bullet' | 'melee' | 'explosion' | 'bleed' | 'fall' | 'ability'
 
+/** Ruleset: solo free-for-all, solo practice, or two-team deathmatch. */
+export type MatchMode = 'ffa' | 'training' | 'tdm'
+
 export interface GrappleRuntime {
   active: boolean
   anchor: Vec3
@@ -79,6 +82,8 @@ export interface Player {
   id: number
   name: string
   isBot: boolean
+  /** Team index (0 = Alpha, 1 = Bravo). Everyone is team 0 outside TDM. */
+  team: number
   botSkill: number
   loadout: Loadout
   upgrades: Record<UpgradeKey, number>
@@ -215,12 +220,16 @@ export interface World {
 }
 
 export interface MatchState {
-  mode: 'ffa' | 'training'
+  mode: MatchMode
   scoreLimit: number
   timeLimit: number
   startedAt: number
   ended: boolean
   winnerId: number | null
+  /** Team deathmatch score per team index. Unused outside TDM. */
+  teamScores: [number, number]
+  /** Index of the winning team, or null for FFA/training. */
+  winnerTeam: number | null
   /** Bots that are currently alive, for wave logic later. */
   wave: number
 }
@@ -253,7 +262,7 @@ export type SimEvent =
   | { type: 'reload'; playerId: number; weaponId: string }
   | { type: 'grapple'; playerId: number; side: 0 | 1; anchor: Vec3; attached: boolean; zip: boolean }
   | { type: 'mode'; text: string }
-  | { type: 'matchEnd'; winnerId: number | null }
+  | { type: 'matchEnd'; winnerId: number | null; winnerTeam?: number | null }
 
 export interface InputCmd {
   /** Local-space movement, x = right, z = forward, each -1..1. */

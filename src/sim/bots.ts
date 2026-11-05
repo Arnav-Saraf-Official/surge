@@ -3,6 +3,7 @@ import { weapon as weaponDef } from '../data/weapons'
 import { abilityStatus, useAbility } from './abilities'
 import { segmentBlocked } from './collision'
 import { eyePos } from './movement'
+import { friendly } from './teams'
 import { emptyInput } from './types'
 import type { InputCmd, Player, World } from './types'
 
@@ -35,6 +36,7 @@ function chooseTarget(world: World, bot: Player): Player | null {
   let bestDist = Infinity
   for (const p of world.players) {
     if (!p.alive || p.id === bot.id) continue
+    if (friendly(world, bot, p)) continue
     // Concealed players are not targetable; splash and stray shots still hurt them.
     if (p.hiding) continue
     // Invisible players are only spotted inside the shimmer radius.

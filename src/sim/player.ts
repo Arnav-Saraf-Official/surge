@@ -114,6 +114,7 @@ export interface CreatePlayerOptions {
   id: number
   name: string
   slot: number
+  team?: number
   isBot?: boolean
   botSkill?: number
   loadout?: Loadout
@@ -132,6 +133,7 @@ export function createPlayer(opts: CreatePlayerOptions): Player {
     id: opts.id,
     name: opts.name,
     isBot: opts.isBot ?? false,
+    team: opts.team ?? 0,
     botSkill: opts.botSkill ?? 0.5,
     loadout,
     upgrades,

@@ -11,12 +11,13 @@ import { drainSp } from './style'
 import { spendStyle, updateEffects, useAbility } from './abilities'
 import { createPlayer, deriveStats, emptyLoadout, makeWeaponRuntime, SLOT_COUNT } from './player'
 import { emptyInput } from './types'
-import type { InputCmd, Loadout, Orb, Player, World } from './types'
+import type { InputCmd, Loadout, MatchMode, Orb, Player, World } from './types'
 import type { MapDef } from '../data/types'
 import { emptyUpgrades } from '../data/upgrades'
 import { STAND_HEIGHT, playerBox } from './collision'
 
 export const DEFAULT_SCORE_LIMIT = 25
+export const DEFAULT_TDM_SCORE_LIMIT = 40
 export const DEFAULT_TIME_LIMIT = 480
 export const ORB_RESPAWN = 45
 
@@ -26,7 +27,7 @@ export interface MatchConfig {
   upgrades: Record<UpgradeKey, number>
   botCount: number
   difficulty: BotDifficulty
-  mode?: 'ffa' | 'training'
+  mode?: MatchMode
   scoreLimit?: number
   timeLimit?: number
   seed?: number
@@ -107,6 +108,7 @@ export function safeSpawn(world: World, spawn: [number, number, number]): Return
 export function createWorld(cfg: MatchConfig): World {
   const map = getMap(cfg.mapId)
   const rng = new Rng(cfg.seed ?? 1337)
+  const mode = cfg.mode ?? 'ffa'
   const orbs: Orb[] = map.orbs.map((p, i) => ({
     id: i + 1,
     pos: v3(p[0], p[1], p[2]),
@@ -129,12 +131,14 @@ export function createWorld(cfg: MatchConfig): World {
     rng,
     nextEntityId: orbs.length + 1,
     match: {
-      mode: cfg.mode ?? 'ffa',
-      scoreLimit: cfg.scoreLimit ?? DEFAULT_SCORE_LIMIT,
+      mode,
+      scoreLimit: cfg.scoreLimit ?? (mode === 'tdm' ? DEFAULT_TDM_SCORE_LIMIT : DEFAULT_SCORE_LIMIT),
       timeLimit: cfg.timeLimit ?? DEFAULT_TIME_LIMIT,
       startedAt: 0,
       ended: false,
       winnerId: null,
+      teamScores: [0, 0],
+      winnerTeam: null,
       wave: 1,
     },
   }
@@ -163,6 +167,8 @@ export function createWorld(cfg: MatchConfig): World {
       id: i + 1,
       name: BOT_NAMES[i % BOT_NAMES.length],
       slot: 0,
+      // Alternating bots keeps the hero on Alpha with three allies at 7 bots.
+      team: mode === 'tdm' ? (i % 2 === 0 ? 1 : 0) : 0,
       isBot: true,
       botSkill: BOT_SKILL[cfg.difficulty],
       loadout,
@@ -197,7 +203,9 @@ function firstSlot(player: Player): number {
 }
 
 export function respawnPlayer(world: World, player: Player): void {
-  const enemies = world.players.filter((p) => p.alive && p.id !== player.id)
+  const enemies = world.players.filter(
+    (p) => p.alive && p.id !== player.id && !(world.match.mode === 'tdm' && p.team === player.team),
+  )
   let best = world.map.spawns[0]
   let bestScore = -Infinity
   if (enemies.length === 0) {
@@ -358,6 +366,21 @@ function updateOrbs(world: World, dt: number): void {
 function checkMatchEnd(world: World): void {
   if (world.match.ended || world.match.mode === 'training') return
   const elapsed = world.time - world.match.startedAt
+
+  if (world.match.mode === 'tdm') {
+    const [alpha, bravo] = world.match.teamScores
+    if (Math.max(alpha, bravo) < world.match.scoreLimit && elapsed < world.match.timeLimit) return
+    const winnerTeam = alpha >= bravo ? 0 : 1
+    const best = [...world.players]
+      .filter((p) => p.team === winnerTeam)
+      .sort((a, b) => b.score - a.score)[0]
+    world.match.ended = true
+    world.match.winnerTeam = winnerTeam
+    world.match.winnerId = best?.id ?? null
+    world.events.push({ type: 'matchEnd', winnerId: world.match.winnerId, winnerTeam })
+    return
+  }
+
   const leader = [...world.players].sort((a, b) => b.score - a.score)[0]
   if (leader.score >= world.match.scoreLimit) {
     world.match.ended = true

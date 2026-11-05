@@ -3,6 +3,7 @@ import { weapon as weaponDef } from '../data/weapons'
 import { abilityForSlot, abilityStatus } from '../sim/abilities'
 import { CONDITION_LABEL } from '../data/types'
 import { passiveCdr } from '../sim/style'
+import { TEAM_NAMES } from '../sim/teams'
 
 interface FeedEntry {
   text: string
@@ -32,7 +33,7 @@ export class Hud {
     this.root = root
     root.innerHTML = `
       <div class="hud-top">
-        <div class="hud-block"><span class="label">SCORE</span><span id="hud-score">0</span><span class="dim" id="hud-limit">/ 25</span></div>
+        <div class="hud-block"><span class="label" id="hud-score-label">SCORE</span><span id="hud-score">0</span><span class="dim" id="hud-limit">/ 25</span></div>
         <div class="hud-timer" id="hud-timer">8:00</div>
         <div class="hud-block"><span class="label">PLACE</span><span id="hud-place">1st</span></div>
       </div>
@@ -161,12 +162,23 @@ export class Hud {
       if (node && node.textContent !== text) node.textContent = text
     }
 
-    set('hud-score', String(local.score))
-    set('hud-limit', `/ ${world.match.scoreLimit}`)
+    const teamMode = world.match.mode === 'tdm'
+    if (teamMode) {
+      const mine = world.match.teamScores[local.team] ?? 0
+      const theirs = world.match.teamScores[1 - local.team] ?? 0
+      set('hud-score-label', TEAM_NAMES[local.team] ?? 'TEAM')
+      set('hud-score', String(mine))
+      set('hud-limit', `– ${theirs} ${TEAM_NAMES[1 - local.team]}`)
+      set('hud-place', mine > theirs ? 'LEAD' : mine < theirs ? 'BEHIND' : 'TIED')
+    } else {
+      set('hud-score-label', 'SCORE')
+      set('hud-score', String(local.score))
+      set('hud-limit', `/ ${world.match.scoreLimit}`)
+      const ranked = [...world.players].sort((a, b) => b.score - a.score)
+      const place = ranked.findIndex((p) => p.id === local.id) + 1
+      set('hud-place', `${place}${place === 1 ? 'st' : place === 2 ? 'nd' : place === 3 ? 'rd' : 'th'}`)
+    }
     set('hud-timer', fmtTime(world.match.timeLimit - (world.time - world.match.startedAt)))
-    const ranked = [...world.players].sort((a, b) => b.score - a.score)
-    const place = ranked.findIndex((p) => p.id === local.id) + 1
-    set('hud-place', `${place}${place === 1 ? 'st' : place === 2 ? 'nd' : place === 3 ? 'rd' : 'th'}`)
 
     set('hud-hp', String(Math.ceil(Math.max(0, local.health))))
     set('hud-hpmax', `/ ${Math.round(local.stats.maxHealth)}`)

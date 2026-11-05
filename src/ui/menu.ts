@@ -14,7 +14,7 @@ export interface MenuSettings {
   mapId: string
   botCount: number
   difficulty: BotDifficulty
-  mode: 'ffa' | 'training'
+  mode: 'ffa' | 'training' | 'tdm'
   loadout: Loadout
   upgrades: UpgradeSpend
 }
@@ -56,7 +56,7 @@ export function parseSavedSettings(raw: string | null, defaults: MenuSettings): 
   if (settings.difficulty === 'easy' || settings.difficulty === 'normal' || settings.difficulty === 'hard' || settings.difficulty === 'elite') {
     result.difficulty = settings.difficulty
   }
-  if (settings.mode === 'ffa' || settings.mode === 'training') result.mode = settings.mode
+  if (settings.mode === 'ffa' || settings.mode === 'training' || settings.mode === 'tdm') result.mode = settings.mode
 
   const slots = (settings.loadout as { slots?: unknown } | null)?.slots
   if (Array.isArray(slots) && slots.length === result.loadout.slots.length) {
@@ -145,7 +145,13 @@ export class Menu {
     this.screen = 'results'
     const table = leaderboard(world)
     const me = table.find((p) => p.id === 0)
-    const victory = world.players[0].id === world.match.winnerId
+    const tdm = world.match.mode === 'tdm'
+    const victory = tdm
+      ? world.match.winnerTeam === me?.team
+      : world.players[0].id === world.match.winnerId
+    const scoreLine = tdm
+      ? `ALPHA ${world.match.teamScores[0]} — ${world.match.teamScores[1]} BRAVO · `
+      : ''
     const kd = Math.round(((me?.kills ?? 0) / Math.max(1, me?.deaths ?? 0)) * 100) / 100
     const rows = table
       .map(
@@ -164,7 +170,7 @@ export class Menu {
         <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="results-title">
           <span class="dialog-eyebrow">Match report · ${world.map.name}</span>
           <h1 class="dialog-title" id="results-title">${victory ? 'Victory' : 'Match over'}</h1>
-          <p class="dialog-sub">${me?.kills ?? 0} eliminations · ${me?.deaths ?? 0} deaths · ${kd} K/D</p>
+          <p class="dialog-sub">${scoreLine}${me?.kills ?? 0} eliminations · ${me?.deaths ?? 0} deaths · ${kd} K/D</p>
           <table class="scoreboard">
             <thead><tr><th>#</th><th>Operative</th><th>K</th><th>D</th><th>K/D</th></tr></thead>
             <tbody>${rows}</tbody>
@@ -236,7 +242,9 @@ export class Menu {
     const spent = pointsSpent(s.upgrades)
     const map = MAPS.find((m) => m.id === s.mapId) ?? MAPS[0]
     const packageLabel = stats.specialist ? 'SPECIALIST' : stats.duelist ? 'DUELIST' : 'BALANCED'
-    const statusLine = `${s.mode === 'training' ? 'Training ground' : 'Free for all'} · ${s.botCount} bots · ${s.difficulty}`
+    const statusLine = `${
+      s.mode === 'training' ? 'Training ground' : s.mode === 'tdm' ? 'Team deathmatch' : 'Free for all'
+    } · ${s.botCount} bots · ${s.difficulty}`
 
     const slotHtml = s.loadout.slots
       .map((id, i) => {
@@ -296,8 +304,13 @@ export class Menu {
     const difficultyHtml = (['easy', 'normal', 'hard', 'elite'] as BotDifficulty[])
       .map((d) => `<button class="seg-btn" data-difficulty="${d}" aria-pressed="${s.difficulty === d}">${d}</button>`)
       .join('')
-    const modeHtml = (['ffa', 'training'] as const)
-      .map((m) => `<button class="seg-btn" data-mode="${m}" aria-pressed="${s.mode === m}">${m === 'ffa' ? 'Free for all' : 'Training'}</button>`)
+    const modeHtml = (['ffa', 'tdm', 'training'] as const)
+      .map(
+        (m) =>
+          `<button class="seg-btn" data-mode="${m}" aria-pressed="${s.mode === m}">${
+            m === 'ffa' ? 'Free for all' : m === 'tdm' ? 'Team deathmatch' : 'Training'
+          }</button>`,
+      )
       .join('')
 
     this.root.innerHTML = `
@@ -364,12 +377,18 @@ export class Menu {
                   <div class="seg" role="group" aria-labelledby="mode-label">${modeHtml}</div>
                 </div>
                 <div class="field range-field">
-                  <label class="field-label" for="bot-count">Hostiles · ${s.botCount}</label>
+                  <label class="field-label" for="bot-count">${s.mode === 'tdm' ? 'Bots' : 'Hostiles'} · ${s.botCount}</label>
                   <div class="range-row">
                     <input id="bot-count" type="range" min="1" max="11" value="${s.botCount}" style="--fill:${((s.botCount - 1) / 10) * 100}%" />
                     <output id="bot-count-label" for="bot-count">${s.botCount}</output>
                   </div>
-                  <span class="field-hint">${s.mode === 'training' ? 'Passive targets for movement practice' : 'Everyone for themselves · first to 25'}</span>
+                  <span class="field-hint">${
+                    s.mode === 'training'
+                      ? 'Passive targets for movement practice'
+                      : s.mode === 'tdm'
+                        ? 'Alpha vs Bravo · first team to 40'
+                        : 'Everyone for themselves · first to 25'
+                  }</span>
                 </div>
               </div>
             </section>
@@ -390,7 +409,7 @@ export class Menu {
                         const used = s.loadout.slots.includes(w.id) && s.loadout.slots[this.pickerSlot] !== w.id
                         return `<button class="picker-item" data-weapon="${w.id}" ${used ? 'disabled' : ''}>
                           <span class="pi-name">${w.name}</span>
-                          <span class="pi-ability">F ${w.f.name} · T ${w.t.name}${w.t.lethal ? ` [${CONDITION_LABEL[w.t.lethal]}]` : ''}</span>
+                          <span class="pi-ability">F ${w.f.name} · T ${w.t.name}${w.t.lethal ? ` [${CONDITION_LABEL[w.t.lethal]}]` : ''}${w.alt ? ` · RMB ${w.alt.name}` : ''}</span>
                           <span class="pi-blurb dim">${w.blurb}</span>
                         </button>`
                       })
@@ -505,7 +524,7 @@ export class Menu {
       const label = root.querySelector('#bot-count-label')
       if (label) label.textContent = range.value
       const fieldLabel = root.querySelector('label[for="bot-count"]')
-      if (fieldLabel) fieldLabel.textContent = `Hostiles · ${range.value}`
+      if (fieldLabel) fieldLabel.textContent = `${this.settings.mode === 'tdm' ? 'Bots' : 'Hostiles'} · ${range.value}`
     })
     root.querySelector('[data-action="start"]')?.addEventListener('click', () => {
       this.persistSettings()

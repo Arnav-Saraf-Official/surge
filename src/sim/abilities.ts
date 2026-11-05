@@ -6,6 +6,7 @@ import { knifeCurve, knifeFlurry } from './combat'
 import { FLOURISH_COST, OVERCHARGE_COST, OVERCHARGE_FILL } from './style'
 import type { ActiveEffect, Player, World } from './types'
 import { hasEffect } from './effects'
+import { friendly } from './teams'
 import { v3 } from '../core/math'
 
 export const DEPLOY_TRANSITION = 2
@@ -182,7 +183,7 @@ function applyInstant(world: World, player: Player, eff: Effect): void {
     }
     case 'knockback': {
       for (const p of world.players) {
-        if (!p.alive || p.id === player.id) continue
+        if (!p.alive || p.id === player.id || friendly(world, player, p)) continue
         const dx = p.pos.x - player.pos.x
         const dz = p.pos.z - player.pos.z
         const d = Math.hypot(dx, dz)
@@ -201,7 +202,7 @@ function applyInstant(world: World, player: Player, eff: Effect): void {
       const weapon = weaponDef(weaponId)
       const damage = weapon.fire.damage * weapon.fire.pellets * eff.damageFraction
       for (const target of world.players) {
-        if (!target.alive || target.id === player.id) continue
+        if (!target.alive || target.id === player.id || friendly(world, player, target)) continue
         const dx = target.pos.x - player.pos.x
         const dz = target.pos.z - player.pos.z
         const distance = Math.hypot(dx, dz)
@@ -231,7 +232,7 @@ function applyInstant(world: World, player: Player, eff: Effect): void {
     case 'slowTargets': {
       for (const target of world.players) {
         const distance = Math.hypot(target.pos.x - player.pos.x, target.pos.z - player.pos.z)
-        if (!target.alive || target.id === player.id || distance > eff.radius) continue
+        if (!target.alive || target.id === player.id || friendly(world, player, target) || distance > eff.radius) continue
         target.effects.push({
           abilityId: `slow-${player.id}-${world.tick}`,
           abilityName: 'Shockwave',

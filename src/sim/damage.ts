@@ -2,6 +2,7 @@ import { lenXZ, v3 } from '../core/math'
 import type { Condition } from '../data/types'
 import { weapon as weaponDef } from '../data/weapons'
 import { SP_AWARD, awardSp, killSp, onPlayerKilled } from './style'
+import { friendly, isTeamMode } from './teams'
 import type { DamageSource, Player, World } from './types'
 
 export const RESPAWN_TIME = 3
@@ -99,6 +100,10 @@ export function applyDamage(
   if (world.time < victim.invulnerableUntil) return 0
   if (raw <= 0 && !opts.lethal) return 0
 
+  const attacker = world.players.find((p) => p.id === attackerId) ?? null
+  // Friendly rounds pass through teammates without damage, charge or feedback.
+  if (attacker && friendly(world, attacker, victim)) return 0
+
   let amount = raw * damageResistance(victim)
   if (opts.source === 'bullet' && !opts.lethal) amount *= NORMAL_BULLET_DAMAGE_MULT
   if (isExposed(victim, world.time)) amount *= EXPOSED_DAMAGE_TAKEN
@@ -108,7 +113,6 @@ export function applyDamage(
   }
   if (opts.lethal) amount = Math.max(amount, victim.health)
 
-  const attacker = world.players.find((p) => p.id === attackerId) ?? null
   const dealt = Math.min(victim.health, amount)
   victim.health = Math.max(0, victim.health - amount)
   victim.lastDamageAt = world.time
@@ -191,6 +195,7 @@ export function killPlayer(world: World, victim: Player, killerId: number, opts:
     killer.kills += 1
     killer.score += 1
     killer.lastKillAt = world.time
+    if (isTeamMode(world) && killer.team !== victim.team) world.match.teamScores[killer.team] += 1
     spGain = killSp(world, killer, victim, {
       headshot: !!opts.headshot,
       source: opts.source === 'melee' ? 'melee' : opts.source === 'explosion' ? 'explosion' : 'bullet',

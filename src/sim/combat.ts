@@ -4,6 +4,7 @@ import { weapon as weaponDef } from '../data/weapons'
 import { playerBox, raycastWorld, raycastWorldAll } from './collision'
 import { activeLethal, activeLethalMelee, applyDamage } from './damage'
 import { effectMult } from './effects'
+import { friendly } from './teams'
 import { SPRINT_SPEED, aimDir, eyePos } from './movement'
 import { passiveCdr } from './style'
 import type { Player, Projectile, World } from './types'
@@ -435,6 +436,7 @@ export function meleeAttack(world: World, player: Player, def: WeaponDef, strike
   const candidates: Array<{ player: Player; dot: number }> = []
   for (const p of world.players) {
     if (!p.alive || p.id === player.id) continue
+    if (friendly(world, player, p)) continue
     const to = { x: p.pos.x - origin.x, y: p.pos.y + p.height * 0.6 - origin.y, z: p.pos.z - origin.z }
     const d = Math.hypot(to.x, to.y, to.z)
     if (d > reach + 0.6) continue
@@ -563,7 +565,7 @@ export function knifeCurve(world: World, player: Player): void {
   const id = player.loadout.slots[player.slot]
   if (!id) return
   const enemies = world.players
-    .filter((p) => p.alive && p.id !== player.id)
+    .filter((p) => p.alive && p.id !== player.id && !friendly(world, player, p))
     .sort((a, b) => dist(player.pos, a.pos) - dist(player.pos, b.pos))
   const base = aimDir(player)
   for (let i = 0; i < KNIFE_CURVE_COUNT; i++) {
@@ -650,7 +652,7 @@ export function useBladeAlt(world: World, player: Player): boolean {
       const radius = 3.6
       let hitAny = false
       for (const target of world.players) {
-        if (!target.alive || target.id === player.id) continue
+        if (!target.alive || target.id === player.id || friendly(world, player, target)) continue
         const dx = target.pos.x - player.pos.x
         const dz = target.pos.z - player.pos.z
         const d = Math.hypot(dx, dz)
@@ -678,7 +680,7 @@ export function useBladeAlt(world: World, player: Player): boolean {
       const fwdX = -Math.sin(player.yaw)
       const fwdZ = -Math.cos(player.yaw)
       for (const target of world.players) {
-        if (!target.alive || target.id === player.id) continue
+        if (!target.alive || target.id === player.id || friendly(world, player, target)) continue
         const dx = target.pos.x - player.pos.x
         const dz = target.pos.z - player.pos.z
         const d = Math.hypot(dx, dz)
