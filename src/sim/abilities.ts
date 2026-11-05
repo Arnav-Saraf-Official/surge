@@ -1,6 +1,6 @@
 import type { AbilityDef, Effect } from '../data/types'
 import { weapon as weaponDef } from '../data/weapons'
-import { applyExposed } from './damage'
+import { applyDamage, applyExposed } from './damage'
 import { moveAndCollide } from './collision'
 import { FLOURISH_COST, OVERCHARGE_COST, OVERCHARGE_FILL } from './style'
 import type { ActiveEffect, Player, World } from './types'
@@ -10,8 +10,39 @@ import { v3 } from '../core/math'
 export const DEPLOY_TRANSITION = 2
 export const PIERCE_SHOTS = 6
 
+const PHANTOM_SIGHT: AbilityDef = {
+  id: 'phantomSight',
+  name: 'Phantom Sight',
+  slot: 'T',
+  tags: ['Offense', 'Utility'],
+  cooldown: 90,
+  charge: 1300,
+  duration: 8,
+  lethal: 'H',
+  effects: [
+    { kind: 'phantomSight' },
+    { kind: 'pierce', extraWalls: 6 },
+    { kind: 'lethalShot', condition: 'H', bodyshotMult: 0.75 },
+  ],
+  notes: 'Blackout vision reveals enemies within 60 m; four wall-penetrating shots.',
+}
+
+function hasPhantomLoadout(player: Player): boolean {
+  return player.loadout.slots.includes('ghostline') && player.loadout.slots.includes('katana')
+}
+
+export function abilityForSlot(player: Player, slot: 'F' | 'T'): AbilityDef | null {
+  const id = player.loadout.slots[player.slot]
+  if (!id) return null
+  if (slot === 'T' && id === 'ghostline' && hasPhantomLoadout(player)) return PHANTOM_SIGHT
+  const weapon = weaponDef(id)
+  return slot === 'F' ? weapon.f : weapon.t
+}
+
 function makeEffect(ability: AbilityDef, weaponId: string, duration: number, now: number): ActiveEffect {
-  const shots = ability.effects.some((e) => e.kind === 'pierce')
+  const shots = ability.effects.some((e) => e.kind === 'phantomSight')
+    ? 4
+    : ability.effects.some((e) => e.kind === 'pierce')
     ? PIERCE_SHOTS
     : ability.effects.some((e) => e.kind === 'guided' || e.kind === 'cluster')
       ? 1
@@ -44,13 +75,18 @@ export interface AbilityStatus {
 export function abilityStatus(world: World, player: Player, slot: 'F' | 'T'): AbilityStatus | null {
   const id = player.loadout.slots[player.slot]
   if (!id) return null
-  const def = weaponDef(id)
   const rt = player.weapons[id]
-  const ability = slot === 'F' ? def.f : def.t
+  if (!rt) return null
+  const ability = abilityForSlot(player, slot)
+  if (!ability) return null
   const chargeNeeded = ability.charge ?? 0
+  const pendingQuickScope =
+    slot === 'F' &&
+    ability.effects.some((effect) => effect.kind === 'quickScope') &&
+    player.effects.some((effect) => effect.abilityId === ability.id)
   const ready =
     slot === 'F'
-      ? rt.fCooldown <= 0 && world.time >= player.exposedUntil
+      ? rt.fCooldown <= 0 && world.time >= player.exposedUntil && !pendingQuickScope
       : rt.tCooldown <= 0 || (chargeNeeded > 0 && rt.tCharge >= chargeNeeded)
   return {
     ready,
@@ -69,17 +105,27 @@ export function isLethalWindow(player: Player): boolean {
 export function useAbility(world: World, player: Player, slot: 'F' | 'T'): boolean {
   const id = player.loadout.slots[player.slot]
   if (!id) return false
-  const def = weaponDef(id)
   const rt = player.weapons[id]
   if (!rt) return false
-  const ability = slot === 'F' ? def.f : def.t
+  const ability = abilityForSlot(player, slot)
+  if (!ability) return false
+  const phantom = player.effects.find((effect) =>
+    effect.effects.some((entry) => entry.kind === 'phantomSight'),
+  )
 
   if (slot === 'F') {
     if (world.time < player.exposedUntil) return false
-    if (rt.fCooldown > 0) return false
+    const pendingQuickScope =
+      ability.effects.some((effect) => effect.kind === 'quickScope') &&
+      player.effects.some((effect) => effect.abilityId === ability.id)
+    if (rt.fCooldown > 0 || pendingQuickScope) return false
   } else {
     const ready = rt.tCooldown <= 0 || (ability.charge !== undefined && rt.tCharge >= ability.charge)
     if (!ready) return false
+  }
+  if (slot === 'F' && id === 'katana' && phantom) {
+    if (phantom.phantomDashUsed) return false
+    phantom.phantomDashUsed = true
   }
 
   // Tripod is a toggle with no cooldown.
@@ -91,8 +137,10 @@ export function useAbility(world: World, player: Player, slot: 'F' | 'T'): boole
     return true
   }
 
-  if (slot === 'F') rt.fCooldown = ability.cooldown * (1 - player.stats.cdr)
-  else {
+  const cooldownOnHeadshot = ability.effects.some((effect) => effect.kind === 'quickScope')
+  if (slot === 'F') {
+    if (!cooldownOnHeadshot) rt.fCooldown = ability.cooldown * (1 - player.stats.cdr)
+  } else {
     rt.tCooldown = ability.cooldown * (1 - player.stats.cdr)
     rt.tCharge = 0
   }
@@ -143,6 +191,31 @@ function applyInstant(world: World, player: Player, eff: Effect): void {
         p.vel.z += (dz / d) * eff.force * falloff
         p.vel.y = Math.max(p.vel.y, 4 * falloff)
         world.events.push({ type: 'knockback', playerId: p.id, from: v3(player.pos.x, player.pos.y, player.pos.z) })
+      }
+      break
+    }
+    case 'shotgunSwing': {
+      const weaponId = player.loadout.slots[player.slot]
+      if (!weaponId) break
+      const weapon = weaponDef(weaponId)
+      const damage = weapon.fire.damage * weapon.fire.pellets * eff.damageFraction
+      for (const target of world.players) {
+        if (!target.alive || target.id === player.id) continue
+        const dx = target.pos.x - player.pos.x
+        const dz = target.pos.z - player.pos.z
+        const distance = Math.hypot(dx, dz)
+        if (distance > eff.radius) continue
+        applyDamage(world, target, player.id, damage, {
+          source: 'ability',
+          weaponId,
+          at: v3(target.pos.x, target.pos.y + target.height * 0.5, target.pos.z),
+        })
+        if (distance > 0.01) {
+          const force = 6 * (1 - distance / eff.radius)
+          target.vel.x += (dx / distance) * force
+          target.vel.z += (dz / distance) * force
+          target.vel.y = Math.max(target.vel.y, 1.5 * force)
+        }
       }
       break
     }

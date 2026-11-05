@@ -10,7 +10,7 @@ import { buildStructures } from './structure'
 import { getGroundTexture, getRockTexture, getSurfaceNormal } from './kitTextures'
 import { weapon as weaponDef } from '../data/weapons'
 import type { Vec3 } from '../core/math'
-import { clamp, damp, lenXZ, yawRight } from '../core/math'
+import { clamp, damp, lenXZ, v3, yawRight } from '../core/math'
 import type { SimEvent, World } from '../sim/types'
 import {
   getAsphaltTexture,
@@ -111,6 +111,7 @@ interface Ring {
 
 interface PlayerMesh {
   group: THREE.Group
+  outline: THREE.Group
   body: THREE.Mesh
   head: THREE.Mesh
   visor: THREE.Mesh
@@ -237,10 +238,10 @@ function buildViewModel(weaponId: string): THREE.Group {
       break
 
     case 'katana': // Katana
-      add(0.04, 0.04, 0.38, 0.02, -0.06, -0.12, darkMetal) // tsuka braided handle
-      add(0.14, 0.14, 0.02, 0.02, -0.06, -0.32, goldMetal) // square tsuba guard
-      add(0.015, 0.05, 1.15, 0.02, -0.04, -0.92, polishedSteel) // polished blade spine
-      add(0.008, 0.02, 1.14, 0.02, -0.06, -0.92, bloomCyan) // glowing cyan energy cutting edge
+      add(0.04, 0.04, 0.34, 0.02, -0.06, -0.12, darkMetal) // tsuka braided handle
+      add(0.14, 0.025, 0.04, 0.02, 0.14, -0.34, goldMetal) // horizontal tsuba guard
+      add(0.015, 1.12, 0.045, 0.02, 0.72, -0.34, polishedSteel) // upright blade spine
+      add(0.008, 1.1, 0.02, 0.02, 0.72, -0.36, bloomCyan) // glowing cyan cutting edge
       add(0.03, 0.03, 0.03, 0.02, -0.06, 0.08, bloomCyan) // glowing pommel core
       break
 
@@ -420,9 +421,12 @@ export class GameRenderer {
   private hemiLight: THREE.HemisphereLight
   private fillLight: THREE.DirectionalLight
   private ambientLight: THREE.AmbientLight
+  private phantomScreen: THREE.Mesh
   private bobPhase = 0
   private shake = 0
   private fovKick = 0
+  private actionTimer = 0
+  private actionKind: 'blade' | 'shotgun' | 'ability' = 'ability'
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -443,6 +447,21 @@ export class GameRenderer {
     this.camera.add(this.viewmodelHolder)
     // The camera must be in the scene graph for its viewmodel children to render.
     this.scene.add(this.camera)
+    this.phantomScreen = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0x02030a,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    )
+    this.phantomScreen.position.z = -0.06
+    this.phantomScreen.renderOrder = 9998
+    this.phantomScreen.visible = false
+    this.camera.add(this.phantomScreen)
     const makeRope = (color: number) => {
       const geometry = new THREE.BufferGeometry()
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
@@ -757,9 +776,10 @@ export class GameRenderer {
     this.viewmodelHolder.add(this.viewmodel)
   }
 
-  handleEvents(events: SimEvent[]): void {
+  handleEvents(events: SimEvent[], world: World): void {
     for (const e of events) {
       if (e.type === 'shot') {
+        if (e.playerId === 0 && weaponDef(e.weaponId).type === 'blade') this.startAction('blade')
         if (e.tracer) {
           this.tracers.push({
             from: { ...e.from },
@@ -779,8 +799,46 @@ export class GameRenderer {
         this.explosionLight.intensity = 6.0
       } else if (e.type === 'hit') {
         this.shake = Math.min(0.4, this.shake + 0.04)
+      } else if (e.type === 'ability') {
+        const player = world.players.find((candidate) => candidate.id === e.playerId)
+        if (!player) continue
+        const color =
+          e.abilityId === 'shotgunSweep'
+            ? 0xffad42
+            : e.slot === 'T'
+              ? 0xa875ff
+              : 0x54dcff
+        const radius = e.abilityId === 'shotgunSweep' ? 1.6 : 2.4
+        this.spawnAbilityRing(v3(player.pos.x, player.pos.y + 0.12, player.pos.z), radius, color)
+        if (e.playerId === 0) {
+          this.startAction(e.abilityId === 'shotgunSweep' ? 'shotgun' : e.abilityId === 'dash' || e.abilityId === 'stealth' ? 'blade' : 'ability')
+        }
       }
     }
+  }
+
+  private startAction(kind: 'blade' | 'shotgun' | 'ability'): void {
+    this.actionKind = kind
+    this.actionTimer = kind === 'ability' ? 0.2 : 0.32
+  }
+
+  private spawnAbilityRing(pos: Vec3, radius: number, color: number): void {
+    if (this.rings.length >= MAX_RINGS) return
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.82, 1, 40),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.95,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    mesh.rotation.x = -Math.PI / 2
+    mesh.position.set(pos.x, pos.y, pos.z)
+    this.scene.add(mesh)
+    this.rings.push({ mesh, life: 0.34, maxLife: 0.34, maxRadius: radius })
   }
 
   private spawnRing(pos: Vec3, radius: number): void {
@@ -810,6 +868,8 @@ export class GameRenderer {
 
     if (!mesh) {
       const group = new THREE.Group()
+      const outline = new THREE.Group()
+      outline.renderOrder = 9999
 
       // High-detail textured armored torso
       const bodyMat = new THREE.MeshStandardMaterial({
@@ -821,6 +881,19 @@ export class GameRenderer {
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.9, 4, 12), bodyMat)
       body.position.y = 0.95
       body.castShadow = true
+      const outlineBody = new THREE.LineSegments(
+        new THREE.EdgesGeometry(body.geometry, 18),
+        new THREE.LineBasicMaterial({
+          color: 0x62f5ff,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      )
+      outlineBody.position.copy(body.position)
+      outlineBody.renderOrder = 9999
+      outline.add(outlineBody)
 
       // Armored tactical helmet
       const headMat = new THREE.MeshStandardMaterial({
@@ -832,6 +905,19 @@ export class GameRenderer {
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), headMat)
       head.position.y = 1.62
       head.castShadow = true
+      const outlineHead = new THREE.LineSegments(
+        new THREE.EdgesGeometry(head.geometry, 18),
+        new THREE.LineBasicMaterial({
+          color: 0x62f5ff,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      )
+      outlineHead.position.copy(head.position)
+      outlineHead.renderOrder = 9999
+      outline.add(outlineHead)
 
       // Glowing Cybernetic Visor (Blooms with UnrealBloomPass!)
       const visorColor = isEnemy ? 0xff2200 : 0x00d4ff
@@ -887,7 +973,8 @@ export class GameRenderer {
 
       group.add(body, head, visor, padL, padR, gun, muzzleFlash, core)
       this.scene.add(group)
-      mesh = { group, body, head, visor, gun, muzzleFlash, target: { ...player.pos } }
+      this.scene.add(outline)
+      mesh = { group, outline, body, head, visor, gun, muzzleFlash, target: { ...player.pos } }
       this.players.set(id, mesh)
     }
 
@@ -895,8 +982,20 @@ export class GameRenderer {
     const t = 1 - Math.exp(-22 * dt)
     mesh.group.position.lerp(new THREE.Vector3(mesh.target.x, mesh.target.y, mesh.target.z), t)
     mesh.group.rotation.y = player.yaw
+    mesh.outline.position.copy(mesh.group.position)
+    mesh.outline.rotation.y = player.yaw
     const visible = player.alive && id !== 0
     mesh.group.visible = visible
+    const local = world.players[0]
+    const phantom = local?.effects.find((effect) =>
+      effect.effects.some((entry) => entry.kind === 'phantomSight'),
+    )
+    const blackout =
+      !!phantom && !!local?.alive && world.time >= (phantom.visionRestoredUntil ?? 0)
+    const withinPhantomRange =
+      !!local &&
+      Math.hypot(local.pos.x - player.pos.x, local.pos.z - player.pos.z) <= 60
+    mesh.outline.visible = visible && blackout && withinPhantomRange
     const muzzleTimer = Math.max(0, (this.enemyMuzzleTimers.get(id) ?? 0) - dt)
     if (muzzleTimer > 0) this.enemyMuzzleTimers.set(id, muzzleTimer)
     else this.enemyMuzzleTimers.delete(id)
@@ -905,7 +1004,6 @@ export class GameRenderer {
     const mat = mesh.body.material as THREE.MeshStandardMaterial
     mat.opacity = translucent ? 0.08 : 1
     mat.transparent = translucent
-    const local = world.players[0]
     const revealed =
       isEnemy &&
       !!local &&
@@ -959,6 +1057,7 @@ export class GameRenderer {
     for (const [id, mesh] of this.players) {
       if (!world.players.some((p) => p.id === id)) {
         this.scene.remove(mesh.group)
+        this.scene.remove(mesh.outline)
         this.players.delete(id)
       }
     }
@@ -982,6 +1081,14 @@ export class GameRenderer {
       this.aimBlend = damp(this.aimBlend, local.aiming ? 1 : 0, 14, dt)
       this.camera.fov = 100 + this.fovKick - this.aimBlend * (100 - aimFov)
       this.camera.updateProjectionMatrix()
+      const phantom = local.effects.find((effect) =>
+        effect.effects.some((entry) => entry.kind === 'phantomSight'),
+      )
+      const blackout =
+        !!phantom && local.alive && world.time >= (phantom.visionRestoredUntil ?? 0)
+      const screenHeight = 2 * 0.06 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
+      this.phantomScreen.scale.set(screenHeight * this.camera.aspect, screenHeight, 1)
+      this.phantomScreen.visible = blackout
 
       this.shake = Math.max(0, this.shake - dt * 1.6)
       if (this.shake > 0.001) {
@@ -999,6 +1106,24 @@ export class GameRenderer {
         -0.42 + this.aimBlend * 0.1,
       )
       vm.rotation.set(0.02 + Math.sin(this.bobPhase) * 0.01, Math.sin(this.bobPhase * 0.5) * 0.012, 0)
+      if (this.actionTimer > 0) {
+        this.actionTimer = Math.max(0, this.actionTimer - dt)
+        const duration = this.actionKind === 'ability' ? 0.2 : 0.32
+        const progress = 1 - this.actionTimer / duration
+        const arc = Math.sin(progress * Math.PI)
+        if (this.actionKind === 'blade') {
+          vm.rotation.x -= arc * 0.42
+          vm.rotation.z -= arc * 1.05
+          vm.position.x += arc * 0.11
+        } else if (this.actionKind === 'shotgun') {
+          vm.rotation.x -= arc * 0.2
+          vm.rotation.z -= arc * 0.62
+          vm.position.x += arc * 0.08
+        } else {
+          vm.position.z -= arc * 0.12
+          vm.rotation.x += arc * 0.12
+        }
+      }
       if (local.sliding) vm.position.y -= 0.04
       if (local.deployed) vm.position.x = 0.02
       if (this.viewmodel) this.viewmodel.visible = local.alive && !scoped

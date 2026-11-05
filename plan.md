@@ -274,7 +274,7 @@ Every entry lists \*\*F\*\* (primary) and \*\*T\*\* (secondary / OP). Tags: \*\*
 
 1\. \*\*Pump "Breacher"\*\*
 
-&#x20;  - F \*Door Kick\* (Defense, Utility): cone blast knocks enemies back 6 m. CD 8 s.
+&#x20;  - F \*Door-Kick Sweep\* (Defense, Utility): 360° shotgun swing damages enemies within 1.6 m for 75% of a full pellet spread. CD 8 s.
 
 &#x20;  - T \*Point-Blank Slam\* (Offense, LETHAL \\\[P\\]): next blast kills if 7 of 9 pellets hit within 4 m; otherwise 60%. CD 70 s / 1000 dmg.
 
@@ -913,6 +913,5 @@ Durations assume a small team of 3 to 4 developers and an artist; a solo develop
 \- \*\*Content volume.\*\* 35 weapons and 10 combos is a lot. Ship v1 with one weapon per type and expand in batches (M2 then M5).
 
 \- \*\*Wallbang fairness and instakill balance.\*\* Build tuning knobs into data files so designers can adjust without code changes.
-
 
 

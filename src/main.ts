@@ -114,7 +114,7 @@ function frame(now: number): void {
     input.aimSensMult = aimMultiplier * grappleMultiplier
 
     const events = world.events
-    renderer.handleEvents(events)
+    renderer.handleEvents(events, world)
     hud.handleEvents(events, world)
     world.events = []
 

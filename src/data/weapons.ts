@@ -50,7 +50,7 @@ export const WEAPONS: WeaponDef[] = [
     id: 'breacher',
     name: 'Pump "Breacher"',
     type: 'shotgun',
-    blurb: 'Nine-pellet pump. Kicks doors, and people, out of the way.',
+    blurb: 'Nine-pellet pump. Sweep the barrel in a 360° strike to clear close quarters.',
     fire: {
       mode: 'semi',
       rpm: 75,
@@ -64,13 +64,13 @@ export const WEAPONS: WeaponDef[] = [
       lethalPellets: 7,
     },
     f: f({
-      id: 'doorKick',
-      name: 'Door Kick',
+      id: 'shotgunSweep',
+      name: 'Door-Kick Sweep',
       slot: 'F',
       tags: ['Defense', 'Utility'],
       cooldown: 8,
       duration: 0,
-      effects: [{ kind: 'knockback', radius: 6, force: 13 }],
+      effects: [{ kind: 'shotgunSwing', radius: 1.6, damageFraction: 0.75 }],
     }),
     t: t({
       id: 'pointBlankSlam',
@@ -187,7 +187,10 @@ export const WEAPONS: WeaponDef[] = [
       tags: ['Offense'],
       cooldown: 20,
       duration: 10,
-      effects: [{ kind: 'accuracy', mult: 0.1 }],
+      effects: [
+        { kind: 'accuracy', mult: 0.1 },
+        { kind: 'quickScope', angleDeg: 30, rangeMult: 1.1 },
+      ],
     }),
     t: t({
       id: 'wallPiercer',

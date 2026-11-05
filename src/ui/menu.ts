@@ -231,6 +231,8 @@ export class Menu {
     const s = this.settings
     const stats = deriveStats(s.loadout, s.upgrades)
     const equipped = s.loadout.slots.filter((x): x is string => !!x)
+    const phantomSightAvailable =
+      s.loadout.slots.includes('ghostline') && s.loadout.slots.includes('katana')
     const spent = pointsSpent(s.upgrades)
     const map = MAPS.find((m) => m.id === s.mapId) ?? MAPS[0]
     const packageLabel = stats.specialist ? 'SPECIALIST' : stats.duelist ? 'DUELIST' : 'BALANCED'
@@ -239,6 +241,7 @@ export class Menu {
     const slotHtml = s.loadout.slots
       .map((id, i) => {
         const def = id ? weaponDef(id) : null
+        const phantomSight = id === 'ghostline' && phantomSightAvailable
         return `
         <button class="slot-card ${def ? 'filled' : ''}" data-slot="${i}" aria-label="Slot ${i + 1}: ${def ? def.name : 'empty'}">
           <span class="slot-index">${String(i + 1).padStart(2, '0')}</span>
@@ -246,7 +249,7 @@ export class Menu {
             ${
               def
                 ? `<span class="slot-top"><span class="slot-name">${def.name}</span><span class="slot-type">${def.type.toUpperCase()}</span></span>
-                   <span class="slot-abilities"><span>F · ${def.f.name}</span><span class="${def.t.lethal ? 'lethal' : ''}">T · ${def.t.name}${def.t.lethal ? ' · LETHAL' : ''}</span></span>`
+                   <span class="slot-abilities"><span>F · ${def.f.name}</span><span class="${def.t.lethal || phantomSight ? 'lethal' : ''}">T · ${phantomSight ? 'Phantom Sight' : def.t.name}${def.t.lethal || phantomSight ? ' · LETHAL' : ''}</span></span>`
                 : `<span class="slot-empty">Empty slot</span><span class="slot-type dim">free buff</span>`
             }
           </span>
@@ -271,7 +274,9 @@ export class Menu {
         </div>`
     }).join('')
 
-    const packageText = stats.specialist
+    const packageText = phantomSightAvailable
+      ? 'Phantom Sight unlocked — use T while holding Ghostline.'
+      : stats.specialist
       ? 'Specialist package online — every F and T bonus is active.'
       : stats.duelist
         ? 'Duelist package online — the two-weapon synergy is active.'

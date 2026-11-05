@@ -111,6 +111,11 @@ interface TargetHit {
   headshot: boolean
 }
 
+interface QuickScopeTarget {
+  player: Player
+  dir: ReturnType<typeof v3>
+}
+
 function raycastPlayers(world: World, origin: ReturnType<typeof v3>, dir: ReturnType<typeof v3>, maxDist: number, shooterId: number): TargetHit | null {
   let best: TargetHit | null = null
   for (const p of world.players) {
@@ -121,6 +126,37 @@ function raycastPlayers(world: World, origin: ReturnType<typeof v3>, dir: Return
     const headshot = point.y >= p.pos.y + p.height * 0.8
     if (!best || hit.t < best.t) best = { player: p, t: hit.t, point, headshot }
   }
+  return best
+}
+
+function findQuickScopeTarget(
+  world: World,
+  shooter: Player,
+  origin: ReturnType<typeof v3>,
+  crosshair: ReturnType<typeof v3>,
+  maxRange: number,
+  angleDeg: number,
+): QuickScopeTarget | null {
+  const minDot = Math.cos((angleDeg * Math.PI) / 180)
+  let best: QuickScopeTarget | null = null
+  let bestDistance = Infinity
+
+  for (const player of world.players) {
+    if (!player.alive || player.id === shooter.id) continue
+    const head = v3(player.pos.x, player.pos.y + player.height * 0.9, player.pos.z)
+    const dx = head.x - origin.x
+    const dy = head.y - origin.y
+    const dz = head.z - origin.z
+    const distance = Math.hypot(dx, dy, dz)
+    if (distance > maxRange || distance >= bestDistance) continue
+    const inverseDistance = 1 / Math.max(distance, 1e-6)
+    const dir = v3(dx * inverseDistance, dy * inverseDistance, dz * inverseDistance)
+    const alignment = dir.x * crosshair.x + dir.y * crosshair.y + dir.z * crosshair.z
+    if (alignment < minDot) continue
+    best = { player, dir }
+    bestDistance = distance
+  }
+
   return best
 }
 
@@ -199,15 +235,42 @@ export function fireWeapon(world: World, player: Player): boolean {
   const origin = eyePos(player)
   const spread = currentSpread(player, def)
   const pellets = Math.max(1, fire.pellets)
-  const wallHits = raycastWorldAll(world.colliders, origin, aimDir(player), fire.range)
+  const quickScopeEffect = player.effects.find(
+    (effect) => effect.weaponId === id && effect.effects.some((entry) => entry.kind === 'quickScope'),
+  )
+  const phantomSightEffect = id === 'ghostline'
+    ? player.effects.find((effect) => effect.effects.some((entry) => entry.kind === 'phantomSight'))
+    : undefined
+  const quickScopeSettings = quickScopeEffect?.effects.find((entry) => entry.kind === 'quickScope')
+  const crosshair = aimDir(player)
+  const quickScopeTarget =
+    quickScopeSettings?.kind === 'quickScope'
+      ? findQuickScopeTarget(
+          world,
+          player,
+          origin,
+          crosshair,
+          fire.range * quickScopeSettings.rangeMult,
+          quickScopeSettings.angleDeg,
+        )
+      : null
+  const shotDir = quickScopeTarget?.dir ?? crosshair
+  const shotRange = quickScopeTarget && quickScopeSettings?.kind === 'quickScope'
+    ? fire.range * quickScopeSettings.rangeMult
+    : fire.range
+  const wallHits = raycastWorldAll(world.colliders, origin, shotDir, shotRange)
   const lethal = activeLethal(player)
-  const allowance = pierceAllowance(player)
+  const allowance = pierceAllowance(player) + (phantomSightEffect ? 6 : 0)
   const pelletHits = new Map<number, number>()
-  const muzzle = v3(origin.x + aimDir(player).x * 0.6, origin.y + aimDir(player).y * 0.6, origin.z + aimDir(player).z * 0.6)
+  const muzzle = v3(origin.x + shotDir.x * 0.6, origin.y + shotDir.y * 0.6, origin.z + shotDir.z * 0.6)
 
   for (let i = 0; i < pellets; i++) {
-    const dir = world.rng.spreadDir(aimDir(player), spread)
-    const target = raycastPlayers(world, origin, dir, fire.range, player.id)
+    const dir = quickScopeTarget ? shotDir : world.rng.spreadDir(shotDir, spread)
+    const hit = raycastPlayers(world, origin, dir, shotRange, player.id)
+    const quickScopeHeadshot = hit?.player.id === quickScopeTarget?.player.id
+    const target = hit
+      ? { ...hit, headshot: quickScopeHeadshot || hit.headshot }
+      : null
     const walls = target
       ? wallHits.filter((h) => h.t < target.t && h.t > 0.1).length
       : 0
@@ -217,7 +280,7 @@ export function fireWeapon(world: World, player: Player): boolean {
       ? target.point
       : wallHits.length > 0
         ? wallHits[0].point
-        : v3(origin.x + dir.x * fire.range, origin.y + dir.y * fire.range, origin.z + dir.z * fire.range)
+        : v3(origin.x + dir.x * shotRange, origin.y + dir.y * shotRange, origin.z + dir.z * shotRange)
 
     world.events.push({
       type: 'shot',
@@ -230,6 +293,11 @@ export function fireWeapon(world: World, player: Player): boolean {
     })
 
     if (!target || blocked) continue
+    if (quickScopeHeadshot && quickScopeEffect) {
+      player.effects = player.effects.filter((effect) => effect !== quickScopeEffect)
+      rt.fCooldown = def.f.cooldown * (1 - player.stats.cdr)
+      world.events.push({ type: 'abilityEnd', playerId: player.id, abilityId: quickScopeEffect.abilityId })
+    }
 
     // Damage: wall penetration uses the table; direct hits use weapon damage.
     let amount: number
@@ -310,6 +378,14 @@ export function fireWeapon(world: World, player: Player): boolean {
         lethal: true,
         at: eyePos(target),
       })
+    }
+  }
+
+  if (phantomSightEffect) {
+    phantomSightEffect.shotsLeft -= 1
+    if (phantomSightEffect.shotsLeft <= 0) {
+      player.effects = player.effects.filter((effect) => effect !== phantomSightEffect)
+      world.events.push({ type: 'abilityEnd', playerId: player.id, abilityId: phantomSightEffect.abilityId })
     }
   }
 

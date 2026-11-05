@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createWorld } from '../src/sim/match'
-import { createPlayer, emptyLoadout } from '../src/sim/player'
+import { createPlayer, emptyLoadout, makeWeaponRuntime } from '../src/sim/player'
 import { emptyUpgrades } from '../src/data/upgrades'
 import { cleanState } from './helpers'
 import { applyDamage, EXPOSED_TIME } from '../src/sim/damage'
 import { wallDamage } from '../src/sim/combat'
 import { fireWeapon } from '../src/sim/combat'
 import { effectSpeedMult } from '../src/sim/movement'
-import { updateEffects, useAbility } from '../src/sim/abilities'
+import { abilityForSlot, abilityStatus, updateEffects, useAbility } from '../src/sim/abilities'
 import { emptyInput } from '../src/sim/types'
 import type { Player, World } from '../src/sim/types'
 import { stepWorld } from '../src/sim/match'
@@ -54,6 +54,50 @@ describe('wall penetration table', () => {
 })
 
 describe('damage and lethal rules', () => {
+  it('unlocks Phantom Sight for Ghostline and Katana, penetrates walls, and ends after four shots', () => {
+    const { world, shooter, victim } = arena('ghostline')
+    expect(abilityForSlot(shooter, 'T')?.name).toBe('Wall Piercer')
+    shooter.loadout.slots[1] = 'katana'
+    shooter.weapons.katana = makeWeaponRuntime('katana')
+    world.colliders = [{ min: { x: -2, y: 0, z: -3 }, max: { x: 2, y: 3, z: -2 } }]
+    shooter.pos = { x: 0, y: 0.02, z: 0 }
+    shooter.yaw = 0
+    shooter.pitch = 0
+    shooter.aiming = true
+    victim.pos = { x: 0, y: 0.02, z: -6 }
+
+    expect(abilityForSlot(shooter, 'T')?.name).toBe('Phantom Sight')
+    expect(useAbility(world, shooter, 'T')).toBe(true)
+    expect(shooter.effects.some((effect) => effect.abilityId === 'phantomSight')).toBe(true)
+    shooter.slot = 1
+    expect(useAbility(world, shooter, 'F')).toBe(true)
+    world.time += 1
+    shooter.weapons.katana.fCooldown = 0
+    expect(useAbility(world, shooter, 'F')).toBe(false)
+    shooter.slot = 0
+
+    for (let shot = 0; shot < 4; shot++) {
+      shooter.weapons.ghostline.nextShotAt = world.time
+      expect(fireWeapon(world, shooter)).toBe(true)
+      if (shot === 0) expect(victim.health).toBeLessThan(victim.stats.maxHealth)
+      world.time += 2
+    }
+
+    expect(shooter.effects.some((effect) => effect.abilityId === 'phantomSight')).toBe(false)
+    expect(world.events.some((event) => event.type === 'abilityEnd' && event.abilityId === 'phantomSight')).toBe(true)
+  })
+
+  it('restores Phantom Sight vision briefly when the player takes damage', () => {
+    const { world, shooter, victim } = arena('ghostline')
+    shooter.loadout.slots[1] = 'katana'
+    shooter.weapons.katana = makeWeaponRuntime('katana')
+    expect(useAbility(world, shooter, 'T')).toBe(true)
+
+    applyDamage(world, shooter, victim.id, 10, { source: 'ability', weaponId: 'reaper' })
+    const phantom = shooter.effects.find((effect) => effect.abilityId === 'phantomSight')
+    expect(phantom?.visionRestoredUntil).toBe(world.time + 1.5)
+  })
+
   it('reduces normal bullet damage', () => {
     const { world, shooter, victim } = arena()
     const dealt = applyDamage(world, victim, shooter.id, 40, { source: 'bullet', weaponId: 'gilded' })
@@ -86,6 +130,34 @@ describe('damage and lethal rules', () => {
     expect(boosted.shooter.effects.some((e) => e.effects.some((eff) => eff.kind === 'nextShot'))).toBe(false)
   })
 
+  it('keeps Quick-Scope Lock armed after a miss and starts cooldown on an in-sweep headshot', () => {
+    const { world, shooter, victim } = arena('ghostline')
+    world.colliders = []
+    shooter.pos = { x: 0, y: 0.02, z: 0 }
+    shooter.yaw = 0
+    shooter.pitch = 0
+    victim.pos = { x: 10, y: 0.02, z: -12 }
+
+    expect(useAbility(world, shooter, 'F')).toBe(true)
+    expect(shooter.weapons.ghostline.fCooldown).toBe(0)
+    expect(shooter.weapons.ghostline.tCooldown).toBe(0)
+    expect(abilityStatus(world, shooter, 'F')?.ready).toBe(false)
+    expect(fireWeapon(world, shooter)).toBe(true)
+    expect(victim.alive).toBe(true)
+    expect(shooter.weapons.ghostline.fCooldown).toBe(0)
+    expect(shooter.effects.some((effect) => effect.abilityId === 'quickScope')).toBe(true)
+
+    // This target is farther than the normal 300m shot range, but inside the
+    // Quick-Scope 30-degree sweep and its modestly extended range.
+    world.time = shooter.weapons.ghostline.nextShotAt
+    victim.pos = { x: 150, y: 0.02, z: -280 }
+    expect(fireWeapon(world, shooter)).toBe(true)
+    expect(victim.alive).toBe(false)
+    expect(world.events.some((event) => event.type === 'kill' && event.victimId === victim.id && event.headshot)).toBe(true)
+    expect(shooter.weapons.ghostline.fCooldown).toBeCloseTo(20 * (1 - shooter.stats.cdr))
+    expect(shooter.effects.some((effect) => effect.abilityId === 'quickScope')).toBe(false)
+  })
+
   it('applies Shockwave slow to nearby enemies', () => {
     const { world, shooter, victim } = arena('thunderclap')
     victim.pos = { x: 0, y: 0.02, z: 24 }
@@ -94,6 +166,27 @@ describe('damage and lethal rules', () => {
     world.time += 2.6
     updateEffects(world, victim, 2.6)
     expect(effectSpeedMult(victim)).toBe(1)
+  })
+
+  it('makes Door-Kick Sweep hit all enemies within two player widths for 75% pellet damage', () => {
+    const { world, shooter, victim } = arena('breacher')
+    shooter.pos = { x: 0, y: 0.02, z: 0 }
+    cleanState(victim, { x: 0, y: 0.02, z: 1.5 })
+    const outside = createPlayer({
+      id: 2,
+      name: 'OUTSIDE',
+      slot: 0,
+      spawn: { x: 1.7, y: 0.02, z: 0 },
+      loadout: { slots: ['reaper', null, null, null, null, null, null] },
+      upgrades: emptyUpgrades(),
+    })
+    cleanState(outside, outside.pos)
+    world.players.push(outside)
+
+    expect(useAbility(world, shooter, 'F')).toBe(true)
+    expect(victim.health).toBeCloseTo(victim.stats.maxHealth - 11 * 9 * 0.75)
+    expect(outside.health).toBe(outside.stats.maxHealth)
+    expect(shooter.weapons.breacher.fCooldown).toBeGreaterThan(0)
   })
 
   it('kills on a lethal hit, including condition-only lethal hits with no base damage', () => {

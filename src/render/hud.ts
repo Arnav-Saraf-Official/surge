@@ -1,6 +1,6 @@
 import type { SimEvent, World } from '../sim/types'
 import { weapon as weaponDef } from '../data/weapons'
-import { abilityStatus } from '../sim/abilities'
+import { abilityForSlot, abilityStatus } from '../sim/abilities'
 import { CONDITION_LABEL } from '../data/types'
 import { passiveCdr } from '../sim/style'
 
@@ -224,16 +224,18 @@ export class Hud {
           <div class="ability-cd" id="hud-t-cd"></div>
           <div class="ability-charge"></div>
         </div>`
-      if (def) {
+      const fAbility = abilityForSlot(local, 'F')
+      const tAbility = abilityForSlot(local, 'T')
+      if (fAbility && tAbility) {
         const fTile = this.el['hud-abilities'].querySelector('#hud-f')!
         const tTile = this.el['hud-abilities'].querySelector('#hud-t')!
-        fTile.querySelector('.ability-name')!.textContent = def.f.name
-        tTile.querySelector('.ability-name')!.textContent = def.t.name
-        fTile.querySelector('.ability-meta')!.textContent = `${def.f.tags.join(' · ')}${def.f.lethal ? ' · LETHAL' : ''}`
-        tTile.querySelector('.ability-meta')!.textContent = `${def.t.tags.join(' · ')}${
-          def.t.lethal ? ` · LETHAL [${CONDITION_LABEL[def.t.lethal]}]` : ''
+        fTile.querySelector('.ability-name')!.textContent = fAbility.name
+        tTile.querySelector('.ability-name')!.textContent = tAbility.name
+        fTile.querySelector('.ability-meta')!.textContent = `${fAbility.tags.join(' · ')}${fAbility.lethal ? ' · LETHAL' : ''}`
+        tTile.querySelector('.ability-meta')!.textContent = `${tAbility.tags.join(' · ')}${
+          tAbility.lethal ? ` · LETHAL [${CONDITION_LABEL[tAbility.lethal]}]` : ''
         }`
-        tTile.classList.toggle('is-lethal', !!def.t.lethal)
+        tTile.classList.toggle('is-lethal', !!tAbility.lethal)
       }
     }
 

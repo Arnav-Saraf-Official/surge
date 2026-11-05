@@ -63,6 +63,7 @@ export type Effect =
   | { kind: 'fireRate'; mult: number }
   | { kind: 'damage'; mult: number }
   | { kind: 'nextShot' }
+  | { kind: 'quickScope'; angleDeg: number; rangeMult: number }
   | { kind: 'accuracy'; mult: number }
   | { kind: 'noRecoil' }
   | { kind: 'speed'; mult: number }
@@ -85,12 +86,15 @@ export type Effect =
   | { kind: 'shield'; radius: number }
   | { kind: 'dash'; distance: number }
   | { kind: 'knockback'; radius: number; force: number }
+  | { kind: 'shotgunSwing'; radius: number; damageFraction: number }
+  | { kind: 'phantomSight' }
 
 /** Timed effect kinds. Others fire once when the ability is activated. */
 export const TIMED_EFFECTS = new Set<Effect['kind']>([
   'fireRate',
   'damage',
   'nextShot',
+  'quickScope',
   'accuracy',
   'noRecoil',
   'speed',
@@ -110,6 +114,7 @@ export const TIMED_EFFECTS = new Set<Effect['kind']>([
   'guided',
   'cluster',
   'shield',
+  'phantomSight',
 ])
 
 export interface AbilityDef {

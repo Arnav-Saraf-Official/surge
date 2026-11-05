@@ -47,6 +47,8 @@ export interface ActiveEffect {
   damageDealt: number
   /** Set for abilities that consume shots, e.g. Wall Piercer. */
   shotsLeft: number
+  visionRestoredUntil?: number
+  phantomDashUsed?: boolean
 }
 
 export interface DerivedStats {

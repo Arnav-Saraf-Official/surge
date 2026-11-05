@@ -111,6 +111,11 @@ export function applyDamage(
   victim.health = Math.max(0, victim.health - amount)
   victim.lastDamageAt = world.time
   victim.lastCombatAt = world.time
+  for (const effect of victim.effects) {
+    if (effect.effects.some((entry) => entry.kind === 'phantomSight')) {
+      effect.visionRestoredUntil = world.time + 1.5
+    }
+  }
 
   if (attacker && attacker !== victim) {
     attacker.lastCombatAt = world.time
