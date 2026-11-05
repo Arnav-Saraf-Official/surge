@@ -8,6 +8,7 @@ export type DamageSource = 'bullet' | 'melee' | 'explosion' | 'bleed' | 'fall' |
 export interface GrappleRuntime {
   active: boolean
   anchor: Vec3
+  /** Current rope radius; without boost it tracks the closest distance reached. */
   length: number
   cooldown: number
   /** Held long enough to count as a swing rather than a zip. */

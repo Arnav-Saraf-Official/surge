@@ -8,7 +8,7 @@ export const UPGRADES: UpgradeDef[] = [
   { key: 'agility', name: 'Agility', perPoint: '+4% move speed, +5% slide length' },
   { key: 'dexterity', name: 'Dexterity', perPoint: '+6% reload / swap speed' },
   { key: 'focus', name: 'Focus', perPoint: '+4% cooldown reduction, +3% T charge from damage' },
-  { key: 'grapple', name: 'Grapple', perPoint: '+4 m range, -8% grapple cooldown' },
+  { key: 'grapple', name: 'Grapple', perPoint: '+4 m grapple range' },
   { key: 'might', name: 'Might', perPoint: '+3% weapon damage' },
 ]
 

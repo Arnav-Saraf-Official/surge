@@ -122,7 +122,7 @@ export class Input {
     cmd.moveX = strafe
     cmd.sprint = this.held('ShiftLeft') || this.held('ShiftRight')
     cmd.crouch = this.held('KeyC')
-    cmd.slide = this.tapped('KeyC') && cmd.sprint
+    cmd.slide = this.tapped('KeyC')
     cmd.jump = this.tapped('Space')
     cmd.grappleBoost = this.held('Space')
     cmd.fire = this.mouseDown

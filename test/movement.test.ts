@@ -3,7 +3,16 @@ import { createWorld } from '../src/sim/match'
 import { emptyUpgrades } from '../src/data/upgrades'
 import { emptyLoadout } from '../src/sim/player'
 import { emptyInput } from '../src/sim/types'
-import { fireGrapple, stepMovement, GRAVITY, JUMP_HEIGHT, DOUBLE_JUMP_HEIGHT_SCALE } from '../src/sim/movement'
+import {
+  fireGrapple,
+  releaseGrapple,
+  stepMovement,
+  GRAVITY,
+  GROUND_SPEED,
+  JUMP_HEIGHT,
+  DOUBLE_JUMP_HEIGHT_SCALE,
+  SPRINT_SPEED,
+} from '../src/sim/movement'
 import type { Player, World } from '../src/sim/types'
 
 function flatMatch(): { world: World; player: Player } {
@@ -44,16 +53,76 @@ describe('movement', () => {
     expect(player.sliding).toBe(false)
   })
 
-  it('keeps slide momentum when jumping out of it', () => {
+  it('jumps out of a slide with speed capped at sprint speed', () => {
     const { world, player } = flatMatch()
+    player.pos = { x: 0, y: 0.02, z: 24 }
     player.yaw = 0
     player.vel = { x: 0, y: 0, z: -8.5 }
     stepMovement(world, player, cmd({ moveZ: 1, sprint: true, slide: true }), 1 / 60)
     const before = Math.hypot(player.vel.x, player.vel.z)
-    stepMovement(world, player, cmd({ jump: true }), 1 / 60)
+    expect(before).toBeGreaterThan(SPRINT_SPEED)
+    stepMovement(world, player, cmd({ jump: true, sprint: true }), 1 / 60)
     expect(player.sliding).toBe(false)
-    expect(Math.hypot(player.vel.x, player.vel.z)).toBeGreaterThan(before * 0.9)
     expect(player.vel.y).toBeGreaterThan(0)
+    expect(Math.hypot(player.vel.x, player.vel.z)).toBeLessThanOrEqual(
+      SPRINT_SPEED * player.stats.speedMult + 1e-6,
+    )
+  })
+
+  it('locks the slide direction at the moment it starts', () => {
+    const { world, player } = flatMatch()
+    // Land on the floor before sliding so the slide isn't cancelled as airborne.
+    player.onGround = false
+    for (let i = 0; i < 120 && !player.onGround; i++) {
+      stepMovement(world, player, cmd({}), 1 / 60)
+    }
+    expect(player.onGround).toBe(true)
+    player.yaw = 0
+    player.vel = { x: 0, y: 0, z: -8.5 }
+    stepMovement(world, player, cmd({ moveZ: 1, sprint: true, slide: true }), 1 / 60)
+    expect(player.sliding).toBe(true)
+    const dirZ = player.vel.z / Math.hypot(player.vel.x, player.vel.z)
+    for (let i = 0; i < 20; i++) {
+      stepMovement(world, player, cmd({ moveX: 1, moveZ: 1, sprint: true }), 1 / 60)
+    }
+    expect(player.sliding).toBe(true)
+    expect(Math.abs(player.vel.x)).toBeLessThan(0.001)
+    expect(player.vel.z / Math.hypot(player.vel.x, player.vel.z)).toBeCloseTo(dirZ, 5)
+  })
+
+  it('turns a slide into a crouch when crouch is pressed again', () => {
+    const { world, player } = flatMatch()
+    player.pos = { x: 0, y: 0.02, z: 24 }
+    player.yaw = 0
+    player.vel = { x: 0, y: 0, z: -8.5 }
+    stepMovement(world, player, cmd({ moveZ: 1, sprint: true, slide: true }), 1 / 60)
+    expect(player.sliding).toBe(true)
+    stepMovement(world, player, cmd({ crouch: true, slide: true }), 1 / 60)
+    expect(player.sliding).toBe(false)
+    expect(player.crouching).toBe(true)
+  })
+
+  it('caps airborne speed at the ground speed of the current stance', () => {
+    const sprintJump = flatMatch()
+    sprintJump.player.vel = { x: 0, y: 0, z: -SPRINT_SPEED }
+    stepMovement(sprintJump.world, sprintJump.player, cmd({ moveZ: 1, sprint: true, jump: true }), 1 / 60)
+    sprintJump.player.onGround = false
+    for (let i = 0; i < 60; i++) {
+      stepMovement(sprintJump.world, sprintJump.player, cmd({ moveZ: 1, sprint: true }), 1 / 60)
+    }
+    const sprintAir = Math.hypot(sprintJump.player.vel.x, sprintJump.player.vel.z)
+    expect(sprintAir).toBeLessThanOrEqual(SPRINT_SPEED * sprintJump.player.stats.speedMult + 1e-6)
+
+    const walkJump = flatMatch()
+    walkJump.player.vel = { x: 0, y: 0, z: -GROUND_SPEED }
+    stepMovement(walkJump.world, walkJump.player, cmd({ moveZ: 1, jump: true }), 1 / 60)
+    walkJump.player.onGround = false
+    for (let i = 0; i < 60; i++) {
+      stepMovement(walkJump.world, walkJump.player, cmd({ moveZ: 1 }), 1 / 60)
+    }
+    const walkAir = Math.hypot(walkJump.player.vel.x, walkJump.player.vel.z)
+    expect(walkAir).toBeLessThanOrEqual(GROUND_SPEED * walkJump.player.stats.speedMult + 1e-6)
+    expect(sprintAir).toBeGreaterThan(walkAir)
   })
 
   it('applies the Exposed movement penalty', () => {
@@ -99,9 +168,9 @@ describe('movement', () => {
     expect(Number.isFinite(player.pos.y)).toBe(true)
   })
 
-  it('attaches grapples to geometry and pulls the player toward it', () => {
+  it('attaches grapples to geometry and keeps them latched while held', () => {
     const { world, player } = flatMatch()
-    expect(player.stats.grappleRange).toBeGreaterThan(100)
+    expect(player.stats.grappleRange).toBeGreaterThan(110)
     player.pos = { x: 0, y: 0.02, z: 24 }
     player.yaw = 0
     player.pitch = 0
@@ -113,7 +182,39 @@ describe('movement', () => {
     for (let i = 0; i < 30; i++) {
       stepMovement(world, player, cmd({ yaw: 0, grappleR: true }), 1 / 60)
     }
-    expect(player.pos.z).toBeLessThan(24)
+    expect(player.grapples[1].active).toBe(true)
+  })
+
+  it('auto-attaches when the crosshair is just off a surface', () => {
+    const { world, player } = flatMatch()
+    world.colliders = [{ min: { x: -0.25, y: 0, z: 0 }, max: { x: 0.25, y: 20, z: 2 } }]
+    player.pos = { x: 0, y: 2, z: 12 }
+    player.pitch = 0
+    player.yaw = 0.04
+    expect(fireGrapple(world, player, 1)).toBe(true)
+  })
+
+  it('tightens the swing radius to the closest distance reached', () => {
+    const { world, player } = flatMatch()
+    player.pos = { x: 0, y: 10, z: 12 }
+    player.vel = { x: 0, y: 0, z: 0 }
+    player.onGround = false
+    player.grapples[1].active = true
+    player.grapples[1].anchor = { x: 0, y: 20, z: 0 }
+    player.grapples[1].length = 20
+    stepMovement(world, player, cmd({ grappleR: true }), 1 / 60)
+    expect(player.grapples[1].active).toBe(true)
+    expect(player.grapples[1].length).toBeLessThan(16)
+  })
+
+  it('re-fires a grapple without waiting on a cooldown', () => {
+    const { world, player } = flatMatch()
+    player.pos = { x: 0, y: 0.02, z: 24 }
+    player.yaw = 0
+    player.pitch = 0
+    expect(fireGrapple(world, player, 1)).toBe(true)
+    releaseGrapple(world, player, 1, false)
+    expect(fireGrapple(world, player, 1)).toBe(true)
   })
 
   it('refuses to attach a grapple when nothing is in range', () => {
@@ -196,25 +297,7 @@ describe('movement', () => {
     expect(player.pos.x + 0.4).toBeLessThanOrEqual(1.001)
   })
 
-  it('adds pull from both hooks and balances opposite anchors', () => {
-    const single = flatMatch()
-    const dual = flatMatch()
-    for (const { player } of [single, dual]) {
-      player.pos = { x: 0, y: 20, z: 20 }
-      player.onGround = false
-      player.grapples[1].active = true
-      player.grapples[1].anchor = { x: 0, y: 20, z: 0 }
-      player.grapples[1].length = 20
-    }
-    dual.player.grapples[0].active = true
-    dual.player.grapples[0].anchor = { x: 0, y: 20, z: 0 }
-    dual.player.grapples[0].length = 20
-    stepMovement(single.world, single.player, cmd({ grappleR: true }), 1 / 60)
-    stepMovement(dual.world, dual.player, cmd({ grappleL: true, grappleR: true }), 1 / 60)
-    expect(Math.hypot(dual.player.vel.x, dual.player.vel.z)).toBeGreaterThan(
-      Math.hypot(single.player.vel.x, single.player.vel.z),
-    )
-
+  it('balances opposite anchors without drifting', () => {
     const balanced = flatMatch()
     balanced.player.pos = { x: 0, y: 20, z: 20 }
     balanced.player.onGround = false

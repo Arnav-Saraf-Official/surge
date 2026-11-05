@@ -525,13 +525,13 @@ function buildGiantJungleTree(
 
 const foundryBoxes: BoxDef[] = [
   // Expanded jungle floor (160 x 160)
-  box(0, -0.5, 0, 160, 1, 160, JUNGLE_FLOOR, 'floor', 'foliage'),
+  box(0, -0.5, 0, 160, 1, 160, JUNGLE_FLOOR, 'floor', 'ground'),
 
   // Surrounding ancient cliff walls
-  ...wallWithGaps(0, -79, 160, 24, true, [], 2.0, JUNGLE_STONE, 'wall', 'brick'),
-  ...wallWithGaps(-79, 0, 160, 24, false, [], 2.0, JUNGLE_STONE, 'wall', 'brick'),
-  ...wallWithGaps(79, 0, 160, 24, false, [], 2.0, JUNGLE_STONE, 'wall', 'brick'),
-  ...wallWithGaps(0, 79, 160, 24, true, [], 2.0, JUNGLE_STONE, 'wall', 'brick'),
+  ...wallWithGaps(0, -79, 160, 24, true, [], 2.0, JUNGLE_STONE, 'wall', 'cliff'),
+  ...wallWithGaps(-79, 0, 160, 24, false, [], 2.0, JUNGLE_STONE, 'wall', 'cliff'),
+  ...wallWithGaps(79, 0, 160, 24, false, [], 2.0, JUNGLE_STONE, 'wall', 'cliff'),
+  ...wallWithGaps(0, 79, 160, 24, true, [], 2.0, JUNGLE_STONE, 'wall', 'cliff'),
 
   // CENTRAL ANCIENT STONE LABYRINTH MAZE (36 x 36)
   ...buildJungleMaze(0, 0, 36, 4.2),

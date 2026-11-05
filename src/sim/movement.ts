@@ -1,4 +1,4 @@
-import { clamp, damp, lenXZ, lookDir, rayAABB, v3, yawForward, yawRight } from '../core/math'
+import { clamp, damp, lenXZ, lookDir, rayAABB, v3, yawForward, yawRight, type Vec3 } from '../core/math'
 import { EXPOSED_SPEED } from './damage'
 import { terrainHeight } from '../data/maps'
 import { CROUCH_HEIGHT, SLIDE_HEIGHT, STAND_HEIGHT, moveAndCollide, playerBox } from './collision'
@@ -18,6 +18,7 @@ export const GRAPPLE_BOOST_DURATION = 5
 const GRAPPLE_REEL_SPEED = 12
 const GRAPPLE_BOOST_ACCEL = 72
 const GRAPPLE_SIDE_OFFSET = 0.32
+const SWING_INPUT_ACCEL = 8
 
 /** Product of `speed` effects from active abilities. */
 export function effectSpeedMult(player: Player): number {
@@ -49,13 +50,25 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
   const deployed = player.deployed
 
   // ---- Slide ---------------------------------------------------------
+  // Tapping crouch again mid-slide drops the slide into a crouch.
+  if (input.slide && input.crouch && player.sliding) {
+    player.sliding = false
+    player.lastSlideAt = world.time
+    player.slideReadyAt = world.time + 0.25
+  }
+
   if (input.slide && player.onGround && !player.sliding && world.time >= player.slideReadyAt && !deployed) {
     const speed = lenXZ(player.vel)
     if (input.sprint || speed > SPRINT_SPEED * 0.6) {
       player.sliding = true
       player.slideTimer = SLIDE_DURATION * stats.slideMult
-      const dirX = hasWish ? wishX : -Math.sin(player.yaw)
-      const dirZ = hasWish ? wishZ : -Math.cos(player.yaw)
+      // The slide locks onto the direction of travel at the instant it starts.
+      const travel = Math.hypot(player.vel.x, player.vel.z)
+      const wishTotal = Math.hypot(wishX, wishZ)
+      const dirX =
+        travel > 0.1 ? player.vel.x / travel : wishTotal > 0.01 ? wishX / wishTotal : -Math.sin(player.yaw)
+      const dirZ =
+        travel > 0.1 ? player.vel.z / travel : wishTotal > 0.01 ? wishZ / wishTotal : -Math.cos(player.yaw)
       const startSpeed = Math.max(SLIDE_SPEED, speed) * stats.slideMult
       player.vel.x = dirX * startSpeed
       player.vel.z = dirZ * startSpeed
@@ -72,16 +85,12 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
       player.lastSlideAt = world.time
       player.slideReadyAt = world.time + 0.25
     } else {
+      // No steering while sliding: the direction chosen at the start holds.
       const s = Math.max(0, speed - 5 * dt)
       const nx = speed > 0.01 ? player.vel.x / speed : 0
       const nz = speed > 0.01 ? player.vel.z / speed : 0
-      let dx = nx + (hasWish ? wishX * 6 * dt : 0)
-      let dz = nz + (hasWish ? wishZ * 6 * dt : 0)
-      const dl = Math.hypot(dx, dz) || 1
-      dx /= dl
-      dz /= dl
-      player.vel.x = dx * s
-      player.vel.z = dz * s
+      player.vel.x = nx * s
+      player.vel.z = nz * s
       if (player.vel.y < 0) player.vel.y = 0
     }
   }
@@ -118,7 +127,8 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
 
   // ---- Jump / double jump -------------------------------------------
   const grappleAttached = player.grapples.some((hook) => hook.active)
-  if (input.jump && !deployed && !grappleAttached) {
+  // A grounded jump stays available while hooked so landing can tighten the swing.
+  if (input.jump && !deployed && (!grappleAttached || player.onGround)) {
     if (player.onGround) {
       player.vel.y = Math.sqrt(2 * GRAVITY * JUMP_HEIGHT)
       player.onGround = false
@@ -149,13 +159,19 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
     if (grounded) {
       player.vel.x = damp(player.vel.x, targetX, hasWish ? 16 : 12, dt)
       player.vel.z = damp(player.vel.z, targetZ, hasWish ? 16 : 12, dt)
-    } else {
-      const before = Math.hypot(player.vel.x, player.vel.z)
+    } else if (!grappleAttached) {
+      // Airborne speed is capped at the same speed this stance gives on the
+      // ground: sprinting gives sprint speed, otherwise walk speed.
+      const airBase = input.crouch
+        ? CROUCH_SPEED
+        : input.sprint && !player.aiming && !deployed
+          ? SPRINT_SPEED
+          : GROUND_SPEED
+      const maxAir = airBase * speedMult
       if (hasWish) {
         player.vel.x += wishX * AIR_ACCEL * dt
         player.vel.z += wishZ * AIR_ACCEL * dt
       }
-      const maxAir = Math.max(before, SPRINT_SPEED * speedMult) * 1.15
       const after = Math.hypot(player.vel.x, player.vel.z)
       if (after > maxAir) {
         player.vel.x = (player.vel.x / after) * maxAir
@@ -182,11 +198,8 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
   player.vel = result.vel
   player.onGround = result.onGround
   if (result.onGround) {
+    // Hooks stay latched on landing: the next jump swings from that radius.
     player.jumpsUsed = 0
-    player.grapples[0].active = false
-    player.grapples[1].active = false
-    player.grappling = false
-    player.grappleBoosting = false
   }
   player.wasAirborne = !player.onGround
 
@@ -206,6 +219,28 @@ export function aimDir(player: Player) {
   return lookDir(player.yaw, player.pitch)
 }
 
+// Small aim cone, walked outward from the crosshair, so a surface the player
+// is looking just past still latches instead of needing pixel-perfect aim.
+const GRAPPLE_ASSIST: Array<[number, number]> = [
+  [0.05, 0],
+  [-0.05, 0],
+  [0, 0.05],
+  [0, -0.05],
+  [0.04, 0.04],
+  [-0.04, 0.04],
+  [0.04, -0.04],
+  [-0.04, -0.04],
+]
+
+function grappleRayHit(world: World, origin: Vec3, dir: Vec3, maxRange: number): number | null {
+  let best: number | null = null
+  for (const box of world.colliders) {
+    const hit = rayAABB(origin, dir, box)
+    if (hit && hit.t > 0.5 && hit.t < maxRange && (best === null || hit.t < best)) best = hit.t
+  }
+  return best
+}
+
 /** Fire one grapple. Returns true when it attached to geometry. */
 export function fireGrapple(world: World, player: Player, side: 0 | 1): boolean {
   const hook = player.grapples[side]
@@ -217,20 +252,29 @@ export function fireGrapple(world: World, player: Player, side: 0 | 1): boolean 
     player.pos.y + player.eyeHeight * 0.7,
     player.pos.z + right.z * sideOffset,
   )
-  const dir = aimDir(player)
   const maxRange = player.stats.grappleRange
-  let bestT = maxRange
-  for (const box of world.colliders) {
-    const hit = rayAABB(origin, dir, box)
-    if (hit && hit.t > 0.5 && hit.t < bestT) bestT = hit.t
+  let dir = aimDir(player)
+  let bestT = grappleRayHit(world, origin, dir, maxRange)
+  if (bestT === null) {
+    for (const [dyaw, dpitch] of GRAPPLE_ASSIST) {
+      const candidate = lookDir(player.yaw + dyaw, player.pitch + dpitch)
+      const t = grappleRayHit(world, origin, candidate, maxRange)
+      if (t !== null) {
+        bestT = t
+        dir = candidate
+        break
+      }
+    }
   }
-  if (bestT >= maxRange) {
+  if (bestT === null) {
     world.events.push({ type: 'grapple', playerId: player.id, side, anchor: v3(), attached: false, zip: false })
     return false
   }
   hook.active = true
   hook.anchor = v3(origin.x + dir.x * bestT, origin.y + dir.y * bestT, origin.z + dir.z * bestT)
-  hook.length = Math.max(1.5, bestT * 0.95)
+  // Attach at the current distance; the rope only shortens when the player
+  // closes the gap themselves.
+  hook.length = Math.max(1.5, bestT)
   hook.swinging = true
   hook.firedAt = world.time
   player.grappling = true
@@ -274,6 +318,7 @@ function applyGrapple(world: World, player: Player, input: InputCmd, dt: number)
     [1, input.grappleR],
   ]
   const right = yawRight(player.yaw)
+  const fwd = yawForward(player.yaw)
   let velocityX = 0
   let velocityY = 0
   let velocityZ = 0
@@ -298,6 +343,10 @@ function applyGrapple(world: World, player: Player, input: InputCmd, dt: number)
     const ny = toAnchor.y / distance
     const nz = toAnchor.z / distance
 
+    // Without boosting the rope holds the tightest radius reached so far, so
+    // dropping onto a platform and jumping off keeps that shorter swing.
+    if (!boosting && distance < hook.length - 0.05) hook.length = distance
+
     if (distance >= hook.length - 0.02) {
       const radial = player.vel.x * nx + player.vel.y * ny + player.vel.z * nz
       if (radial < 0) {
@@ -305,11 +354,30 @@ function applyGrapple(world: World, player: Player, input: InputCmd, dt: number)
         velocityY -= ny * radial * 1.02
         velocityZ -= nz * radial * 1.02
       }
+      // Only a stretched rope pulls; a taut one just constrains the circle.
       const stretch = Math.max(0, distance - hook.length)
-      const pull = boosting ? GRAPPLE_BOOST_ACCEL : Math.min(60, 8 + stretch * 24)
+      const pull = boosting ? GRAPPLE_BOOST_ACCEL : Math.min(48, stretch * 30)
       velocityX += nx * pull * dt
       velocityY += ny * pull * dt
       velocityZ += nz * pull * dt
+
+      // Airborne movement keys feed the swing tangentially instead of adding
+      // free air acceleration toward the look direction.
+      if (!player.onGround) {
+        const wishX = right.x * input.moveX + fwd.x * input.moveZ
+        const wishZ = right.z * input.moveX + fwd.z * input.moveZ
+        const along = wishX * nx + wishZ * nz
+        const tanX = wishX - nx * along
+        const tanY = -ny * along
+        const tanZ = wishZ - nz * along
+        const tanLen = Math.hypot(tanX, tanY, tanZ)
+        if (tanLen > 0.001) {
+          const gain = (SWING_INPUT_ACCEL * dt) / tanLen
+          velocityX += tanX * gain
+          velocityY += tanY * gain
+          velocityZ += tanZ * gain
+        }
+      }
     }
     if (distance > player.stats.grappleRange * 1.4) releaseGrapple(world, player, side, false)
   }

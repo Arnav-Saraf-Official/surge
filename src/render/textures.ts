@@ -7,7 +7,7 @@ import * as THREE from 'three'
 
 const textureCache = new Map<string, THREE.CanvasTexture>()
 
-function createTileableCanvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): THREE.CanvasTexture {
+export function createTileableCanvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height

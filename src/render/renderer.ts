@@ -5,6 +5,9 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import type { BoxDef, MapDef } from '../data/types'
 import { terrainHeight } from '../data/maps'
+import { buildKit, isKitBox } from './kit'
+import { buildStructures } from './structure'
+import { getGroundTexture, getRockTexture, getSurfaceNormal } from './kitTextures'
 import { weapon as weaponDef } from '../data/weapons'
 import type { Vec3 } from '../core/math'
 import { clamp, damp, lenXZ, yawRight } from '../core/math'
@@ -39,6 +42,7 @@ function buildTerrainMesh(map: MapDef): THREE.Mesh | null {
   const positions: number[] = []
   const colors: number[] = []
   const heights: number[] = []
+  const uvs: number[] = []
   const indices: number[] = []
   const low = new THREE.Color(map.id === 'skyfoundry' ? 0x3c5635 : map.id === 'hollow-ward' ? 0x626449 : 0x5c5b50)
   const high = new THREE.Color(map.id === 'skyfoundry' ? 0x73865a : map.id === 'hollow-ward' ? 0x8c8059 : 0x847b68)
@@ -52,6 +56,7 @@ function buildTerrainMesh(map: MapDef): THREE.Mesh | null {
       positions.push(x, height + 0.025, z)
       const color = low.clone().lerp(high, Math.min(1, height / Math.max(1, map.terrain.amplitude)))
       colors.push(color.r, color.g, color.b)
+      uvs.push(x / 14, z / 14)
     }
   }
 
@@ -69,9 +74,16 @@ function buildTerrainMesh(map: MapDef): THREE.Mesh | null {
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })
+  const groundTexture = map.id === 'skyfoundry' ? getGroundTexture() : null
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    map: groundTexture ?? undefined,
+    roughness: 0.95,
+  })
+  if (groundTexture) material.normalMap = getSurfaceNormal(groundTexture, 0.55)
   const mesh = new THREE.Mesh(geometry, material)
   mesh.receiveShadow = true
   mesh.castShadow = true
@@ -572,7 +584,7 @@ export class GameRenderer {
     >()
 
     for (const b of map.boxes) {
-      if (isOrganicBox(b)) continue
+      if (isOrganicBox(b) || isKitBox(b)) continue
       const color = b.color ?? 0x333333
       const key = `${b.texture ?? 'notex'}_${b.kind ?? 'nokind'}_${color}`
       let entry = byKey.get(key)
@@ -630,6 +642,14 @@ export class GameRenderer {
           mat.map = getJungleFoliageTexture()
           mat.roughness = 0.65
           mat.metalness = 0.0
+        } else if (texture === 'cliff') {
+          mat.map = getRockTexture()
+          mat.roughness = 0.95
+          mat.metalness = 0.02
+        } else if (texture === 'ground') {
+          mat.map = getGroundTexture()
+          mat.roughness = 0.95
+          mat.metalness = 0.0
         } else if (texture === 'asphalt') {
           mat.map = getAsphaltTexture()
           mat.roughness = 0.9
@@ -651,6 +671,7 @@ export class GameRenderer {
         // Scale texture tiling to the group's real-world dimensions so large
         // walls and floors no longer smear a single tile across the surface.
         if (mat.map) {
+          mat.normalMap = getSurfaceNormal(mat.map, 0.7)
           mat.color.setHex(0xffffff)
           let span = 0
           let rise = 0
@@ -693,37 +714,10 @@ export class GameRenderer {
       this.mapGroup.add(mesh)
     }
 
-    const organicMaterials = new Map<string, THREE.Material>()
-    for (const b of map.boxes) {
-      if (!isOrganicBox(b)) continue
-      const color = b.color ?? 0x333333
-      const key = `${b.kind}_${color}`
-      let material = organicMaterials.get(key)
-      if (!material) {
-        material = new THREE.MeshStandardMaterial({
-          color,
-          map: b.kind === 'trunk' ? getTreeBarkTexture() : getJungleFoliageTexture(),
-          roughness: b.kind === 'trunk' ? 0.95 : 0.8,
-        })
-        organicMaterials.set(key, material)
-      }
-
-      const geometry =
-        b.kind === 'trunk'
-          ? new THREE.CylinderGeometry(
-              Math.min(b.size[0], b.size[2]) * 0.32,
-              Math.min(b.size[0], b.size[2]) * 0.5,
-              b.size[1],
-              10,
-            )
-          : new THREE.SphereGeometry(1, 12, 10)
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.position.set(...b.pos)
-      if (b.kind === 'foliage') mesh.scale.set(b.size[0] / 2, b.size[1] / 2, b.size[2] / 2)
-      mesh.castShadow = true
-      mesh.receiveShadow = true
-      this.mapGroup.add(mesh)
-    }
+    // Trees are entirely prefab-built by the kit (trunks, roots, canopy).
+    this.mapGroup.add(buildKit(map))
+    // Construction detail layered over the plain building boxes.
+    this.mapGroup.add(buildStructures(map))
 
     // Shared glowing orb + projectile pooled meshes
     if (this.orbMesh) this.scene.remove(this.orbMesh)

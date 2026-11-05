@@ -143,11 +143,15 @@ export class Menu {
 
   showResults(world: World): void {
     this.screen = 'results'
-    const rows = leaderboard(world)
+    const table = leaderboard(world)
+    const me = table.find((p) => p.id === 0)
+    const victory = world.players[0].id === world.match.winnerId
+    const kd = Math.round(((me?.kills ?? 0) / Math.max(1, me?.deaths ?? 0)) * 100) / 100
+    const rows = table
       .map(
         (p, i) => `
         <tr class="${p.id === 0 ? 'you' : ''}">
-          <td>${i + 1}</td>
+          <td>${String(i + 1).padStart(2, '0')}</td>
           <td>${p.name}${p.isBot ? ' <span class="dim">bot</span>' : ''}</td>
           <td>${p.kills}</td>
           <td>${p.deaths}</td>
@@ -156,16 +160,19 @@ export class Menu {
       )
       .join('')
     this.root.innerHTML = `
-      <div class="panel wide">
-        <h1 class="results-title">${world.players[0].id === world.match.winnerId ? 'VICTORY' : 'MATCH OVER'}</h1>
-        <div class="dim center">${world.map.name}</div>
-        <table class="scoreboard">
-          <thead><tr><th>#</th><th>PLAYER</th><th>K</th><th>D</th><th>K/D</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div class="row gap">
-          <button class="btn primary" data-action="again">PLAY AGAIN</button>
-          <button class="btn" data-action="quit">MAIN MENU</button>
+      <div class="menu overlay-shell">
+        <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="results-title">
+          <span class="dialog-eyebrow">Match report · ${world.map.name}</span>
+          <h1 class="dialog-title" id="results-title">${victory ? 'Victory' : 'Match over'}</h1>
+          <p class="dialog-sub">${me?.kills ?? 0} eliminations · ${me?.deaths ?? 0} deaths · ${kd} K/D</p>
+          <table class="scoreboard">
+            <thead><tr><th>#</th><th>Operative</th><th>K</th><th>D</th><th>K/D</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="row gap">
+            <button class="btn primary" data-action="again">Play again</button>
+            <button class="btn ghost" data-action="quit">Main menu</button>
+          </div>
         </div>
       </div>`
     this.root.classList.add('open')
@@ -194,18 +201,22 @@ export class Menu {
 
   private renderPause(): void {
     this.root.innerHTML = `
-      <div class="panel">
-        <h2>PAUSED</h2>
-        <div class="controls">
-          <div><b>WASD</b> move</div><div><b>Shift</b> sprint</div><div><b>C</b> crouch</div>
-          <div><b>Shift+C</b> slide</div><div><b>Space ×2</b> double jump</div><div><b>Q / E</b> grapples</div>
-          <div><b>LMB</b> fire</div><div><b>F / T</b> abilities</div><div><b>Z+F / Z+T</b> style spends</div>
-          <div><b>G</b> explosive</div><div><b>V</b> blade</div><div><b>R</b> reload</div>
-          <div><b>1-7 / wheel</b> slots</div><div><b>Esc</b> pause</div><div></div>
-        </div>
-        <div class="row gap">
-          <button class="btn primary" data-action="resume">RESUME</button>
-          <button class="btn" data-action="quit">QUIT TO MENU</button>
+      <div class="menu overlay-shell">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+          <span class="dialog-eyebrow">Field link held</span>
+          <h2 class="dialog-title" id="pause-title">Paused</h2>
+          <p class="dialog-sub">Take a breath. The match clock is stopped.</p>
+          <div class="controls">
+            <div><b>WASD</b> move</div><div><b>Shift</b> sprint</div><div><b>C</b> crouch</div>
+            <div><b>Shift+C</b> slide</div><div><b>Space ×2</b> double jump</div><div><b>Q / E</b> grapples</div>
+            <div><b>LMB</b> fire</div><div><b>RMB</b> aim / scope</div><div><b>F / T</b> abilities</div>
+            <div><b>Z+F / Z+T</b> style spends</div><div><b>G</b> explosive</div><div><b>V</b> blade</div>
+            <div><b>R</b> reload</div><div><b>1-7 / wheel</b> slots</div><div><b>Esc</b> resume</div>
+          </div>
+          <div class="row gap">
+            <button class="btn primary" data-action="resume">Resume</button>
+            <button class="btn ghost" data-action="quit">Quit to menu</button>
+          </div>
         </div>
       </div>`
     this.root.querySelector('[data-action="resume"]')?.addEventListener('click', () => this.onResume?.())
@@ -221,21 +232,25 @@ export class Menu {
     const stats = deriveStats(s.loadout, s.upgrades)
     const equipped = s.loadout.slots.filter((x): x is string => !!x)
     const spent = pointsSpent(s.upgrades)
+    const map = MAPS.find((m) => m.id === s.mapId) ?? MAPS[0]
+    const packageLabel = stats.specialist ? 'SPECIALIST' : stats.duelist ? 'DUELIST' : 'BALANCED'
+    const statusLine = `${s.mode === 'training' ? 'Training ground' : 'Free for all'} · ${s.botCount} bots · ${s.difficulty}`
 
     const slotHtml = s.loadout.slots
       .map((id, i) => {
         const def = id ? weaponDef(id) : null
         return `
-        <button class="slot-card ${def ? 'filled' : ''}" data-slot="${i}">
-          <span class="slot-index">${i + 1}</span>
-          ${
-            def
-              ? `<span class="slot-name">${def.name}</span>
-                 <span class="slot-type">${def.type.toUpperCase()}</span>
-                 <span class="slot-ability">F ${def.f.name}</span>
-                 <span class="slot-ability op">T ${def.t.name}${def.t.lethal ? ' · LETHAL' : ''}</span>`
-              : `<span class="slot-empty">EMPTY</span><span class="slot-type dim">buff slot</span>`
-          }
+        <button class="slot-card ${def ? 'filled' : ''}" data-slot="${i}" aria-label="Slot ${i + 1}: ${def ? def.name : 'empty'}">
+          <span class="slot-index">${String(i + 1).padStart(2, '0')}</span>
+          <span class="slot-body">
+            ${
+              def
+                ? `<span class="slot-top"><span class="slot-name">${def.name}</span><span class="slot-type">${def.type.toUpperCase()}</span></span>
+                   <span class="slot-abilities"><span>F · ${def.f.name}</span><span class="${def.t.lethal ? 'lethal' : ''}">T · ${def.t.name}${def.t.lethal ? ' · LETHAL' : ''}</span></span>`
+                : `<span class="slot-empty">Empty slot</span><span class="slot-type dim">free buff</span>`
+            }
+          </span>
+          <span class="slot-add" aria-hidden="true">+</span>
         </button>`
       })
       .join('')
@@ -244,81 +259,117 @@ export class Menu {
       const value = s.upgrades[u.key]
       return `
         <div class="upgrade-row">
-          <div class="upgrade-info"><b>${u.name}</b><span class="dim">${u.perPoint}</span></div>
-          <div class="pips">${[0, 1, 2]
+          <div class="upgrade-info"><b>${u.name}</b><span>${u.perPoint}</span></div>
+          <div class="pips" aria-label="${u.name}: ${value} of 3 points">${[0, 1, 2]
             .map((i) => `<i class="${i < value ? 'on' : ''}"></i>`)
             .join('')}</div>
-          <div class="row">
-            <button class="mini" data-up="${u.key}" ${canSpend(s.upgrades, u.key) ? '' : 'disabled'}>+</button>
-            <button class="mini" data-down="${u.key}" ${value > 0 ? '' : 'disabled'}>−</button>
+          <div class="upgrade-controls">
+            <button class="mini" data-down="${u.key}" aria-label="Refund ${u.name}" ${value > 0 ? '' : 'disabled'}>−</button>
+            <span class="upgrade-value">${value}</span>
+            <button class="mini" data-up="${u.key}" aria-label="Add ${u.name}" ${canSpend(s.upgrades, u.key) ? '' : 'disabled'}>+</button>
           </div>
         </div>`
     }).join('')
 
     const packageText = stats.specialist
-      ? 'SPECIALIST — full package active'
+      ? 'Specialist package online — every F and T bonus is active.'
       : stats.duelist
-        ? 'DUELIST — half package active'
+        ? 'Duelist package online — the two-weapon synergy is active.'
         : stats.emptySlots > 0
-          ? `${stats.emptySlots} empty slot buffs: ${stats.buffs.join(', ') || '—'}`
-          : 'No loadout bonuses'
+          ? `${stats.emptySlots} empty ${stats.emptySlots === 1 ? 'slot' : 'slots'} granting: ${stats.buffs.join(', ') || '—'}.`
+          : 'No loadout bonuses active.'
+
+    const mapHtml = MAPS.map(
+      (m, i) => `
+        <button class="map-card" data-map="${m.id}" aria-pressed="${m.id === s.mapId}">
+          <span class="map-index">${String(i + 1).padStart(2, '0')}</span>
+          <span class="map-name">${m.name}</span>
+          <span class="map-setting">${m.setting}</span>
+        </button>`,
+    ).join('')
+
+    const difficultyHtml = (['easy', 'normal', 'hard', 'elite'] as BotDifficulty[])
+      .map((d) => `<button class="seg-btn" data-difficulty="${d}" aria-pressed="${s.difficulty === d}">${d}</button>`)
+      .join('')
+    const modeHtml = (['ffa', 'training'] as const)
+      .map((m) => `<button class="seg-btn" data-mode="${m}" aria-pressed="${s.mode === m}">${m === 'ffa' ? 'Free for all' : 'Training'}</button>`)
+      .join('')
 
     this.root.innerHTML = `
-      <div class="menu-shell">
-        <header class="menu-header">
-          <div class="logo">SURGE<span class="logo-tag">MOVEMENT IS A WEAPON</span></div>
-          <div class="menu-sub">Loadout is identity · ${equipped.length}/7 equipped · ${stats.maxHealth} HP · ${stats.specialist ? 'specialist' : stats.duelist ? 'duelist' : 'balanced'}</div>
+      <div class="menu">
+        <header class="menu-top">
+          <div class="brand">
+            <svg class="brand-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 22 21H2Z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M12 8 17.2 18H6.8Z" fill="currentColor"/></svg>
+            SURGE
+            <span class="brand-sub">Movement is a weapon</span>
+          </div>
+          <div class="menu-meta"><span class="dot" aria-hidden="true"></span>Frontier ops / 07<span class="sep" aria-hidden="true"></span>Build 0.1</div>
         </header>
-        <div class="menu-columns">
-          <section class="panel grow">
-            <h3>LOADOUT <span class="dim">click a slot to change it</span></h3>
-            <div class="slots">${slotHtml}</div>
-            <div class="loadout-footer">
-              <span class="dim">${packageText}</span>
-              <div class="row gap">
-                <button class="btn ghost" data-action="randomize">RANDOM</button>
-                <button class="btn ghost" data-action="clear">CLEAR</button>
-              </div>
+        <div class="menu-grid">
+          <aside class="menu-hero">
+            <p class="eyebrow">Tactical movement shooter</p>
+            <h1 class="menu-title">SURGE<span class="title-dot">.</span></h1>
+            <p class="menu-tag">The floor is a suggestion.</p>
+            <p class="menu-copy">Build a loadout, pick your ground, then outmanoeuvre everyone on it. ${equipped.length} of 7 slots armed.</p>
+            <div class="hero-stats">
+              <div class="hero-stat"><span>Health</span><b>${stats.maxHealth}</b></div>
+              <div class="hero-stat"><span>Armed</span><b>${equipped.length}<i>/7</i></b></div>
+              <div class="hero-stat"><span>Build</span><b class="hero-build">${packageLabel}</b></div>
             </div>
-          </section>
-          <section class="panel side">
-            <h3>UPGRADES <span class="dim">${spent}/${MAX_POINTS} points</span></h3>
-            <div class="upgrades">${upgradeHtml}</div>
-          </section>
+            <div class="hero-deploy">
+              <button class="deploy" data-action="start" ${equipped.length === 0 ? 'disabled' : ''}>
+                <span class="deploy-label">Deploy</span>
+                <span class="deploy-map">${map.name}</span>
+              </button>
+              <span class="deploy-hint">${statusLine}</span>
+            </div>
+            <div class="hero-note"><span>Loadout saved locally</span><span>${spent}/${MAX_POINTS} pts</span></div>
+          </aside>
+          <div class="menu-content">
+            <section class="panel">
+              <div class="panel-head"><h2><span class="ph-index">01</span>Loadout</h2><span class="ph-meta">${equipped.length} of 7 armed</span></div>
+              <div class="slots">${slotHtml}</div>
+              <div class="loadout-footer">
+                <span class="build-note">${packageText}</span>
+                <div class="row gap">
+                  <button class="btn ghost" data-action="randomize">Randomize</button>
+                  <button class="btn ghost" data-action="clear">Clear all</button>
+                </div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2><span class="ph-index">02</span>Operative</h2><span class="ph-meta">${spent} / ${MAX_POINTS} points</span></div>
+              <div class="upgrades">${upgradeHtml}</div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2><span class="ph-index">03</span>Deployment</h2><span class="ph-meta">${MAPS.length} battlegrounds</span></div>
+              <div class="map-grid" role="group" aria-label="Battleground">${mapHtml}</div>
+              <div class="brief">
+                <b>${map.name}</b>
+                <span>${map.blurb}</span>
+                <span class="brief-tip">${map.bestLoadouts}</span>
+              </div>
+              <div class="match-options">
+                <div class="field">
+                  <span class="field-label" id="difficulty-label">Difficulty</span>
+                  <div class="seg" role="group" aria-labelledby="difficulty-label">${difficultyHtml}</div>
+                </div>
+                <div class="field">
+                  <span class="field-label" id="mode-label">Mode</span>
+                  <div class="seg" role="group" aria-labelledby="mode-label">${modeHtml}</div>
+                </div>
+                <div class="field range-field">
+                  <label class="field-label" for="bot-count">Hostiles · ${s.botCount}</label>
+                  <div class="range-row">
+                    <input id="bot-count" type="range" min="1" max="11" value="${s.botCount}" style="--fill:${((s.botCount - 1) / 10) * 100}%" />
+                    <output id="bot-count-label" for="bot-count">${s.botCount}</output>
+                  </div>
+                  <span class="field-hint">${s.mode === 'training' ? 'Passive targets for movement practice' : 'Everyone for themselves · first to 25'}</span>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
-        <section class="panel match">
-          <h3>MATCH</h3>
-          <div class="match-row">
-            <label>MAP
-              <select id="map-select">
-                ${MAPS.map((m) => `<option value="${m.id}" ${m.id === s.mapId ? 'selected' : ''}>${m.name}</option>`).join('')}
-              </select>
-            </label>
-            <label>BOTS
-              <input id="bot-count" type="range" min="1" max="11" value="${s.botCount}" />
-              <span id="bot-count-label">${s.botCount}</span>
-            </label>
-            <label>DIFFICULTY
-              <select id="difficulty">
-                ${(['easy', 'normal', 'hard', 'elite'] as BotDifficulty[])
-                  .map((d) => `<option value="${d}" ${d === s.difficulty ? 'selected' : ''}>${d.toUpperCase()}</option>`)
-                  .join('')}
-              </select>
-            </label>
-            <label>MODE
-              <select id="mode-select">
-                <option value="ffa" ${s.mode === 'ffa' ? 'selected' : ''}>FREE FOR ALL</option>
-                <option value="training" ${s.mode === 'training' ? 'selected' : ''}>TRAINING GROUND</option>
-              </select>
-            </label>
-          </div>
-          <div class="map-info">
-            <b>${MAPS.find((m) => m.id === s.mapId)?.name}</b>
-            <span>${MAPS.find((m) => m.id === s.mapId)?.blurb}</span>
-            <span class="dim">${MAPS.find((m) => m.id === s.mapId)?.bestLoadouts}</span>
-          </div>
-          <button class="btn primary big" data-action="start" ${equipped.length === 0 ? 'disabled' : ''}>DROP IN</button>
-        </section>
       </div>
       ${
         this.pickerSlot >= 0
@@ -392,6 +443,11 @@ export class Menu {
       this.pickerSlot = -1
       this.renderMain()
     })
+    root.querySelector<HTMLElement>('.picker-backdrop')?.addEventListener('click', (e) => {
+      if (e.target !== e.currentTarget) return
+      this.pickerSlot = -1
+      this.renderMain()
+    })
     root.querySelector('[data-action="empty-slot"]')?.addEventListener('click', () => {
       const slots = [...this.settings.loadout.slots]
       slots[this.pickerSlot] = null
@@ -415,27 +471,36 @@ export class Menu {
       this.persistSettings()
       this.renderMain()
     })
-    root.querySelector<HTMLSelectElement>('#map-select')?.addEventListener('change', (e) => {
-      this.settings.mapId = (e.target as HTMLSelectElement).value
-      this.persistSettings()
-      this.renderMain()
+    root.querySelectorAll<HTMLElement>('[data-map]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.settings.mapId = btn.dataset.map!
+        this.persistSettings()
+        this.renderMain()
+      })
     })
-    root.querySelector<HTMLSelectElement>('#difficulty')?.addEventListener('change', (e) => {
-      this.settings.difficulty = (e.target as HTMLSelectElement).value as BotDifficulty
-      this.persistSettings()
-      this.renderMain()
+    root.querySelectorAll<HTMLElement>('[data-difficulty]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.settings.difficulty = btn.dataset.difficulty as BotDifficulty
+        this.persistSettings()
+        this.renderMain()
+      })
     })
-    root.querySelector<HTMLSelectElement>('#mode-select')?.addEventListener('change', (e) => {
-      this.settings.mode = (e.target as HTMLSelectElement).value as MenuSettings['mode']
-      this.persistSettings()
-      this.renderMain()
+    root.querySelectorAll<HTMLElement>('[data-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.settings.mode = btn.dataset.mode as MenuSettings['mode']
+        this.persistSettings()
+        this.renderMain()
+      })
     })
     const range = root.querySelector<HTMLInputElement>('#bot-count')
     range?.addEventListener('input', () => {
       this.settings.botCount = Number(range.value)
       this.persistSettings()
+      range.style.setProperty('--fill', `${((Number(range.value) - 1) / 10) * 100}%`)
       const label = root.querySelector('#bot-count-label')
       if (label) label.textContent = range.value
+      const fieldLabel = root.querySelector('label[for="bot-count"]')
+      if (fieldLabel) fieldLabel.textContent = `Hostiles · ${range.value}`
     })
     root.querySelector('[data-action="start"]')?.addEventListener('click', () => {
       this.persistSettings()
