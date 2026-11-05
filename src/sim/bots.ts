@@ -9,10 +9,10 @@ import type { InputCmd, Player, World } from './types'
 export type BotDifficulty = 'easy' | 'normal' | 'hard' | 'elite'
 
 export const BOT_SKILL: Record<BotDifficulty, number> = {
-  easy: 0.25,
-  normal: 0.5,
-  hard: 0.75,
-  elite: 0.92,
+  easy: 0.15,
+  normal: 0.42,
+  hard: 0.7,
+  elite: 0.9,
 }
 
 /** Preferred engagement distance per weapon mode. */
@@ -35,6 +35,8 @@ function chooseTarget(world: World, bot: Player): Player | null {
   let bestDist = Infinity
   for (const p of world.players) {
     if (!p.alive || p.id === bot.id) continue
+    // Concealed players are not targetable; splash and stray shots still hurt them.
+    if (p.hiding) continue
     // Invisible players are only spotted inside the shimmer radius.
     if (p.invisibility > 0) {
       const d = dist(bot.pos, p.pos)
@@ -65,8 +67,10 @@ export function botInput(world: World, bot: Player): InputCmd {
 
   if (world.time >= brain.nextDecisionAt) {
     brain.nextDecisionAt = world.time + 0.25
-    const target = chooseTarget(world, bot)
-    brain.targetId = target?.id ?? -1
+    const spotted = chooseTarget(world, bot)
+    const spottedId = spotted?.id ?? -1
+    if (spottedId !== brain.targetId) brain.targetAcquiredAt = world.time
+    brain.targetId = spottedId
     if (world.rng.next() < 0.25) brain.strafe *= -1
     if (world.rng.next() < (1 - skill) * 0.5) brain.strafe *= -1
     if (world.time >= brain.nextWanderAt) {
@@ -91,10 +95,11 @@ export function botInput(world: World, bot: Player): InputCmd {
     const desiredPitch = Math.atan2(dy, horizontal)
 
     // Reaction and aim error scale inversely with skill.
-    const errorScale = (1 - skill) * 0.1
+    const errorScale = (1 - skill) * 0.15
     const jitterY = (world.rng.next() - 0.5) * errorScale
     const jitterP = (world.rng.next() - 0.5) * errorScale * 0.6
-    const turnRate = 2 + skill * 9
+    const turnRate = 1.4 + skill * 8.5
+    const reacting = world.time - brain.targetAcquiredAt < 0.25 + (1 - skill) * 1.6
     brain.aimYaw += angleDelta(brain.aimYaw, desiredYaw + jitterY) * Math.min(1, turnRate * (1 / 60))
     brain.aimPitch += angleDelta(brain.aimPitch, desiredPitch + jitterP) * Math.min(1, turnRate * (1 / 60))
 
@@ -112,16 +117,28 @@ export function botInput(world: World, bot: Player): InputCmd {
     const aligned = Math.abs(angleDelta(brain.aimYaw, desiredYaw)) < 0.035 + (1 - skill) * 0.06
     if (world.match.mode !== 'training') {
       input.aim = (aligned || range > 10) && mode !== 'melee' && skill > 0.35
-      input.fire = aligned && range < (def?.fire.range ?? 90) && !segmentBlocked(world.colliders, eye, aimPoint)
-      input.melee = mode === 'melee' && range < 2.4 && aligned
+      input.fire = !reacting && aligned && range < (def?.fire.range ?? 90) && !segmentBlocked(world.colliders, eye, aimPoint)
+      input.melee = !reacting && mode === 'melee' && range < 2.4 && aligned
     }
+
+    // Take a knee at range or while reloading: steadier shots, harder to hit.
+    const runtime = weaponId ? bot.weapons[weaponId] : null
+    if (world.time >= brain.nextCrouchAt) {
+      brain.nextCrouchAt = world.time + 0.9
+      const reloading = !!runtime?.reloading
+      if ((range > 12 || reloading) && world.rng.next() < 0.45) {
+        brain.crouchUntil = world.time + 0.8 + world.rng.next() * 2.2
+      }
+    }
+    input.crouch = world.time < brain.crouchUntil || !!runtime?.reloading
+    if (input.crouch) input.sprint = false
 
     // Slide to close distance, jump to break lines.
     if (world.time >= brain.nextJumpAt) {
       if (world.rng.next() < 0.02 * skill) {
         input.jump = true
         brain.nextJumpAt = world.time + 1.5
-      } else if (input.sprint && world.rng.next() < 0.05 * skill) {
+      } else if (input.sprint && world.rng.next() < 0.12 + skill * 0.24) {
         input.slide = true
         brain.nextJumpAt = world.time + 2
       }

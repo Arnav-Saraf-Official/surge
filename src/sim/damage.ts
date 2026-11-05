@@ -12,6 +12,8 @@ const NORMAL_BULLET_DAMAGE_MULT = 0.8
 
 export interface DamageOpts {
   headshot?: boolean
+  /** Katana neck slice, for the kill feed and HUD. */
+  neck?: boolean
   source: DamageSource
   weaponId: string
   lethal?: boolean
@@ -150,6 +152,7 @@ export function applyDamage(
       targetId: victim.id,
       damage: dealt,
       headshot: !!opts.headshot,
+      neck: !!opts.neck,
       lethal: !!opts.lethal,
       at: opts.at ?? v3(victim.pos.x, victim.pos.y + 1.2, victim.pos.z),
     })
@@ -163,8 +166,15 @@ export function killPlayer(world: World, victim: Player, killerId: number, opts:
   victim.deaths += 1
   victim.respawnAt = world.time + RESPAWN_TIME
   victim.sliding = false
+  victim.hiding = false
+  victim.hideSpotId = -1
+  victim.hideProgress = 0
+  victim.hideExitArmed = false
+  victim.hideReturnPos = null
   victim.deployed = false
   victim.effects = []
+  victim.deflectUntil = 0
+  victim.deflectCharges = 0
   victim.grapples[0].active = false
   victim.grapples[1].active = false
   victim.grappling = false
@@ -214,6 +224,7 @@ export function killPlayer(world: World, victim: Player, killerId: number, opts:
     victimId: victim.id,
     weaponId: opts.weaponId,
     headshot: !!opts.headshot,
+    neck: !!opts.neck,
     lethal: !!opts.lethal,
     spGain,
   })

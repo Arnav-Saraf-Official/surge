@@ -5,7 +5,8 @@ import { emptyUpgrades } from '../src/data/upgrades'
 import { cleanState } from './helpers'
 import { applyDamage, EXPOSED_TIME } from '../src/sim/damage'
 import { wallDamage } from '../src/sim/combat'
-import { fireWeapon } from '../src/sim/combat'
+import { fireWeapon, meleeAttack } from '../src/sim/combat'
+import { weapon as weaponDef } from '../src/data/weapons'
 import { effectSpeedMult } from '../src/sim/movement'
 import { abilityForSlot, abilityStatus, updateEffects, useAbility } from '../src/sim/abilities'
 import { emptyInput } from '../src/sim/types'
@@ -273,6 +274,36 @@ describe('damage and lethal rules', () => {
     shooter.sliding = true
     applyDamage(world, victim, shooter.id, 10, { source: 'bullet', weaponId: 'gilded' })
     expect(shooter.sp).toBeGreaterThan(0)
+  })
+
+  it('makes a katana neck slice far deadlier than a body slash', () => {
+    const body = arena('katana')
+    body.shooter.pos = { x: 0, y: 0.02, z: 0 }
+    body.shooter.yaw = 0
+    // Aim at the chest (roughly 0.9 m up the target's 1.8 m frame).
+    body.shooter.pitch = Math.atan2(0.9 - 1.62, 1.8)
+    body.victim.pos = { x: 0, y: 0.02, z: -1.8 }
+    body.victim.height = 1.8
+    meleeAttack(body.world, body.shooter, weaponDef('katana'))
+    const bodyDamage = body.victim.stats.maxHealth - body.victim.health
+
+    const neck = arena('katana')
+    neck.shooter.pos = { x: 0, y: 0.02, z: 0 }
+    neck.shooter.yaw = 0
+    // Aim at the neck (roughly 1.42 m up) through the 1.62 m eye line.
+    neck.shooter.pitch = Math.atan2(1.42 - 1.62, 1.8)
+    neck.victim.pos = { x: 0, y: 0.02, z: -1.8 }
+    neck.victim.height = 1.8
+    meleeAttack(neck.world, neck.shooter, weaponDef('katana'))
+    const neckDamage = neck.victim.stats.maxHealth - neck.victim.health
+
+    expect(bodyDamage).toBeGreaterThan(0)
+    expect(neckDamage).toBeGreaterThan(bodyDamage * 1.5)
+    expect(
+      neck.world.events.some(
+        (event) => (event.type === 'hit' || event.type === 'kill') && event.neck,
+      ),
+    ).toBe(true)
   })
 })
 

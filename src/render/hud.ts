@@ -43,6 +43,10 @@ export class Hud {
         <div class="grapple-label"><span>GRAPPLE BOOST</span><span id="hud-grapple-time">5.0s</span></div>
         <div class="bar"><div class="fill grapple" id="hud-grapple-fill"></div></div>
       </div>
+      <div class="hide-prompt" id="hud-hide">
+        <div class="hide-label"><span id="hud-hide-text">HOLD Z · HIDE</span><span id="hud-hide-time"></span></div>
+        <div class="bar"><div class="fill hide" id="hud-hide-fill"></div></div>
+      </div>
       <div class="hud-abilities" id="hud-abilities"></div>
       <div class="hud-bottom-left">
         <div class="health">
@@ -86,7 +90,15 @@ export class Hud {
         const killer = world.players.find((p) => p.id === e.killerId)
         const victim = world.players.find((p) => p.id === e.victimId)
         const wname = e.weaponId ? weaponDef(e.weaponId).name : 'the void'
-        const tag = e.lethal ? ' LETHAL' : e.headshot ? ' HS' : ''
+        const tag = e.neck
+          ? e.lethal
+            ? ' NECK LETHAL'
+            : ' NECK'
+          : e.lethal
+            ? ' LETHAL'
+            : e.headshot
+              ? ' HS'
+              : ''
         this.feed.push({
           text: `${killer?.name ?? '???'} → ${victim?.name ?? '???'} · ${wname}${tag}`,
           at: performance.now(),
@@ -99,6 +111,7 @@ export class Hud {
       } else if (e.type === 'hit' && e.playerId === this.localId) {
         this.hitTimer = 0.14
         this.hitHeadshot = e.headshot
+        if (e.neck) this.showBanner('NECK SLICE', 0.7)
       } else if (e.type === 'damage' && e.playerId === this.localId) {
         this.bumpVignette()
       } else if (e.type === 'exposed' && e.playerId === this.localId) {
@@ -126,6 +139,11 @@ export class Hud {
     v.classList.remove('flash')
     void v.offsetWidth
     v.classList.add('flash')
+  }
+
+  /** Public banner for presentation toggles outside the sim (e.g. camera mode). */
+  showNotice(text: string, seconds = 0.8): void {
+    this.showBanner(text, seconds)
   }
 
   private showBanner(text: string, seconds: number): void {
@@ -160,6 +178,34 @@ export class Hud {
     this.el['hud-grapple-fill'].style.width = `${(grappleFuel / 5) * 100}%`
     set('hud-grapple-time', `${grappleFuel.toFixed(1)}s`)
     this.root.classList.toggle('grapple-boosting', local.grappleBoosting)
+
+    // Concealment prompt + hold progress. Hidden players can still be hurt, so
+    // the prompt stays on screen the whole time they are inside.
+    const hides = world.map.hides ?? []
+    let nearHide = false
+    if (!local.hiding) {
+      for (const spot of hides) {
+        if (
+          Math.hypot(spot.pos[0] - local.pos.x, spot.pos[2] - local.pos.z) <= spot.radius + 1.4 &&
+          Math.abs(spot.pos[1] - local.pos.y) <= 2.6
+        ) {
+          nearHide = true
+          break
+        }
+      }
+    }
+    const showHide = local.alive && (local.hiding || nearHide)
+    this.el['hud-hide'].classList.toggle('show', showHide)
+    if (showHide) {
+      const progress = Math.max(0, Math.min(1, local.hideProgress))
+      this.el['hud-hide-fill'].style.width = `${Math.round(progress * 100)}%`
+      this.el['hud-hide-text'].textContent = local.hiding
+        ? local.hideExitArmed
+          ? 'HOLD Z · LEAVE'
+          : 'HIDDEN · RELEASE Z'
+        : 'HOLD Z · HIDE'
+      this.el['hud-hide-time'].textContent = progress > 0.01 ? `${Math.round(progress * 100)}%` : ''
+    }
 
     set('hud-sp', String(Math.floor(local.sp)))
     this.el['hud-spbar'].style.width = `${local.sp}%`

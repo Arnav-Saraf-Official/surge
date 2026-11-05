@@ -17,6 +17,7 @@ export class Input {
   private mouseDown = false
   private rightMouseDown = false
   private mouseClicked = false
+  private prevRightMouseDown = false
   private wheel = 0
   private canvas: HTMLElement | null = null
   aimSensMult = 1.0
@@ -71,6 +72,7 @@ export class Input {
     this.keys.clear()
     this.mouseDown = false
     this.rightMouseDown = false
+    this.prevRightMouseDown = false
   }
 
   private onMouseMove = (e: MouseEvent) => {
@@ -123,10 +125,17 @@ export class Input {
     cmd.sprint = this.held('ShiftLeft') || this.held('ShiftRight')
     cmd.crouch = this.held('KeyC')
     cmd.slide = this.tapped('KeyC')
+    // Holding Z near a concealment spot hides you. The same key still arms the
+    // style spend modifier (Z+F / Z+T).
+    cmd.hide = this.held('KeyZ')
     cmd.jump = this.tapped('Space')
     cmd.grappleBoost = this.held('Space')
     cmd.fire = this.mouseDown
     cmd.aim = this.rightMouseDown
+    cmd.altFire = this.rightMouseDown
+    cmd.altPress = this.rightMouseDown && !this.prevRightMouseDown
+    cmd.altRelease = !this.rightMouseDown && this.prevRightMouseDown
+    this.prevRightMouseDown = this.rightMouseDown
     cmd.grappleL = this.held('KeyQ')
     cmd.grappleR = this.held('KeyE')
     cmd.abilityF = this.tapped('KeyF')

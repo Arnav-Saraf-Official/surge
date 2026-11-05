@@ -209,8 +209,8 @@ export class Menu {
           <div class="controls">
             <div><b>WASD</b> move</div><div><b>Shift</b> sprint</div><div><b>C</b> crouch</div>
             <div><b>Shift+C</b> slide</div><div><b>Space ×2</b> double jump</div><div><b>Q / E</b> grapples</div>
-            <div><b>LMB</b> fire</div><div><b>RMB</b> aim / scope</div><div><b>F / T</b> abilities</div>
-            <div><b>Z+F / Z+T</b> style spends</div><div><b>G</b> explosive</div><div><b>V</b> blade</div>
+            <div><b>LMB</b> fire</div><div><b>RMB</b> aim / blade technique</div><div><b>F / T</b> abilities</div>
+            <div><b>Hold Z</b> hide in cover</div><div><b>X</b> camera view</div><div><b>Z+F / Z+T</b> style spends</div><div><b>G</b> explosive</div><div><b>V</b> blade</div>
             <div><b>R</b> reload</div><div><b>1-7 / wheel</b> slots</div><div><b>Esc</b> resume</div>
           </div>
           <div class="row gap">

@@ -7,10 +7,12 @@ import type { BoxDef, MapDef } from '../data/types'
 import { terrainHeight } from '../data/maps'
 import { buildKit, isKitBox } from './kit'
 import { buildStructures } from './structure'
+import { buildHides } from './hides'
+import { pointBlocked } from '../sim/collision'
 import { getGroundTexture, getRockTexture, getSurfaceNormal } from './kitTextures'
 import { weapon as weaponDef } from '../data/weapons'
 import type { Vec3 } from '../core/math'
-import { clamp, damp, lenXZ, v3, yawRight } from '../core/math'
+import { clamp, damp, lenXZ, lookDir, v3, yawRight } from '../core/math'
 import type { SimEvent, World } from '../sim/types'
 import {
   getAsphaltTexture,
@@ -111,12 +113,19 @@ interface Ring {
 
 interface PlayerMesh {
   group: THREE.Group
+  /** Wrapper that carries the crouch/slide posture. */
+  pose: THREE.Group
   outline: THREE.Group
   body: THREE.Mesh
   head: THREE.Mesh
   visor: THREE.Mesh
-  gun?: THREE.Mesh
+  gun: THREE.Mesh
+  blade: THREE.Mesh
   muzzleFlash: THREE.Mesh
+  armL: THREE.Group
+  armR: THREE.Group
+  legL: THREE.Group
+  legR: THREE.Group
   target: Vec3
 }
 
@@ -417,6 +426,7 @@ export class GameRenderer {
   private aimBlend = 0
   private orbMesh: THREE.InstancedMesh | null = null
   private projectileMesh: THREE.InstancedMesh | null = null
+  private knifeMesh: THREE.InstancedMesh | null = null
   private sun: THREE.DirectionalLight
   private hemiLight: THREE.HemisphereLight
   private fillLight: THREE.DirectionalLight
@@ -427,6 +437,8 @@ export class GameRenderer {
   private fovKick = 0
   private actionTimer = 0
   private actionKind: 'blade' | 'shotgun' | 'ability' = 'ability'
+  /** `third` pulls the camera behind the player for a follow view. */
+  cameraMode: 'first' | 'third' = 'first'
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -557,6 +569,12 @@ export class GameRenderer {
 
     window.addEventListener('resize', this.resize)
     this.resize()
+  }
+
+  /** Swap between eyes-in-head and over-the-shoulder follow views. */
+  toggleCamera(): 'first' | 'third' {
+    this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first'
+    return this.cameraMode
   }
 
   resize = (): void => {
@@ -737,6 +755,8 @@ export class GameRenderer {
     this.mapGroup.add(buildKit(map))
     // Construction detail layered over the plain building boxes.
     this.mapGroup.add(buildStructures(map))
+    // Concealment spots (visual only; they are never colliders).
+    this.mapGroup.add(buildHides(map))
 
     // Shared glowing orb + projectile pooled meshes
     if (this.orbMesh) this.scene.remove(this.orbMesh)
@@ -760,9 +780,22 @@ export class GameRenderer {
       emissiveIntensity: 3.5,
       roughness: 0.2,
     })
-    this.projectileMesh = new THREE.InstancedMesh(projGeo, projMat, 36)
+    this.projectileMesh = new THREE.InstancedMesh(projGeo, projMat, 64)
     this.projectileMesh.frustumCulled = false
     this.scene.add(this.projectileMesh)
+
+    if (this.knifeMesh) this.scene.remove(this.knifeMesh)
+    const knifeGeo = new THREE.BoxGeometry(0.05, 0.05, 0.5)
+    const knifeMat = new THREE.MeshStandardMaterial({
+      color: 0xd9e7f5,
+      emissive: 0x9fe6ff,
+      emissiveIntensity: 1.4,
+      roughness: 0.25,
+      metalness: 0.8,
+    })
+    this.knifeMesh = new THREE.InstancedMesh(knifeGeo, knifeMat, 64)
+    this.knifeMesh.frustumCulled = false
+    this.scene.add(this.knifeMesh)
   }
 
   setViewmodel(weaponId: string | null): void {
@@ -878,8 +911,8 @@ export class GameRenderer {
         roughness: 0.65,
         metalness: 0.25,
       })
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.9, 4, 12), bodyMat)
-      body.position.y = 0.95
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.58, 0.32), bodyMat)
+      body.position.y = 1.26
       body.castShadow = true
       const outlineBody = new THREE.LineSegments(
         new THREE.EdgesGeometry(body.geometry, 18),
@@ -902,8 +935,8 @@ export class GameRenderer {
         roughness: 0.5,
         metalness: 0.5,
       })
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), headMat)
-      head.position.y = 1.62
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 12, 10), headMat)
+      head.position.y = 1.68
       head.castShadow = true
       const outlineHead = new THREE.LineSegments(
         new THREE.EdgesGeometry(head.geometry, 18),
@@ -929,7 +962,7 @@ export class GameRenderer {
         roughness: 0.15,
       })
       const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, 0.12), visorMat)
-      visor.position.set(0, 1.64, -0.2)
+      visor.position.set(0, 1.7, -0.2)
 
       // Shoulder armor pads
       const padMat = new THREE.MeshStandardMaterial({
@@ -938,10 +971,10 @@ export class GameRenderer {
         roughness: 0.4,
         metalness: 0.6,
       })
-      const padL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.18), padMat)
-      padL.position.set(-0.38, 1.35, 0)
-      const padR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.18), padMat)
-      padR.position.set(0.38, 1.35, 0)
+      const padL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.24), padMat)
+      padL.position.set(-0.37, 1.43, 0)
+      const padR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.24), padMat)
+      padR.position.set(0.37, 1.43, 0)
 
       // Third-person weapon model carried by bot/player
       const gunMat = new THREE.MeshStandardMaterial({
@@ -951,14 +984,20 @@ export class GameRenderer {
         metalness: 0.8,
       })
       const gun = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.65), gunMat)
-      gun.position.set(0.26, 1.05, -0.25)
+      gun.position.set(0.26, 1.1, -0.3)
       gun.castShadow = true
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.28), gunMat)
+      barrel.position.set(0, 0.02, -0.44)
+      gun.add(barrel)
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.22), gunMat)
+      stock.position.set(0, -0.02, 0.4)
+      gun.add(stock)
 
       const muzzleFlash = new THREE.Mesh(
         new THREE.SphereGeometry(0.025, 6, 4),
         new THREE.MeshBasicMaterial({ color: 0xffc56e, toneMapped: false }),
       )
-      muzzleFlash.position.set(0.26, 1.05, -0.62)
+      muzzleFlash.position.set(0.26, 1.1, -0.75)
       muzzleFlash.visible = false
 
       // Chest status core, bright enough to bloom and read at a distance.
@@ -969,12 +1008,91 @@ export class GameRenderer {
         roughness: 0.3,
       })
       const core = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.04), coreMat)
-      core.position.set(0, 1.16, -0.34)
+      core.position.set(0, 1.3, -0.18)
 
-      group.add(body, head, visor, padL, padR, gun, muzzleFlash, core)
+      // ---- Rig: articulated arms, legs, boots, pack and blade ----------
+      const suitMat = new THREE.MeshStandardMaterial({ color: 0x191d24, roughness: 0.78, metalness: 0.18 })
+      const limbPlateMat = new THREE.MeshStandardMaterial({
+        map: getPlayerArmorTexture(isEnemy),
+        color: isEnemy ? 0xb8503d : 0x4694d8,
+        roughness: 0.42,
+        metalness: 0.55,
+      })
+      const bootMat = new THREE.MeshStandardMaterial({ color: 0x101318, roughness: 0.6, metalness: 0.45 })
+      const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd7e6ef, roughness: 0.12, metalness: 0.95 })
+      const accentMat = new THREE.MeshStandardMaterial({
+        color: visorColor,
+        emissive: visorColor,
+        emissiveIntensity: 2.0,
+        roughness: 0.3,
+      })
+      const limb = (
+        w: number,
+        h: number,
+        d: number,
+        mat: THREE.Material,
+        x: number,
+        y: number,
+        z: number,
+        parent: THREE.Object3D,
+      ) => {
+        const part = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+        part.position.set(x, y, z)
+        part.castShadow = true
+        parent.add(part)
+        return part
+      }
+      const makeArm = (side: number) => {
+        const arm = new THREE.Group()
+        arm.position.set(0.34 * side, 1.44, 0)
+        limb(0.13, 0.34, 0.15, limbPlateMat, 0, -0.18, 0, arm)
+        limb(0.115, 0.3, 0.13, suitMat, 0, -0.48, -0.02, arm)
+        limb(0.1, 0.12, 0.15, bootMat, 0, -0.66, -0.04, arm)
+        return arm
+      }
+      const makeLeg = (side: number) => {
+        const leg = new THREE.Group()
+        leg.position.set(0.15 * side, 0.96, 0)
+        limb(0.17, 0.42, 0.2, limbPlateMat, 0, -0.21, 0, leg)
+        limb(0.145, 0.36, 0.17, suitMat, 0, -0.58, 0, leg)
+        limb(0.17, 0.15, 0.28, bootMat, 0, -0.81, -0.05, leg)
+        return leg
+      }
+      const armL = makeArm(-1)
+      const armR = makeArm(1)
+      const legL = makeLeg(-1)
+      const legR = makeLeg(1)
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035, 1.0, 0.055), bladeMat)
+      blade.position.set(0.44, 1.5, -0.2)
+      blade.rotation.z = -0.18
+      blade.castShadow = true
+      blade.visible = false
+
+      const pose = new THREE.Group()
+      pose.add(body, head, visor, padL, padR, gun, muzzleFlash, core, armL, armR, legL, legR, blade)
+      group.add(pose)
+      // Pack + status strip give the silhouette a readable back.
+      limb(0.36, 0.4, 0.16, suitMat, 0, 1.27, 0.24, pose)
+      limb(0.16, 0.05, 0.03, accentMat, 0, 1.4, 0.33, pose)
+      limb(0.1, 0.06, 0.03, accentMat, 0, 1.14, 0.33, pose)
       this.scene.add(group)
       this.scene.add(outline)
-      mesh = { group, outline, body, head, visor, gun, muzzleFlash, target: { ...player.pos } }
+      mesh = {
+        group,
+        pose,
+        outline,
+        body,
+        head,
+        visor,
+        gun,
+        blade,
+        muzzleFlash,
+        armL,
+        armR,
+        legL,
+        legR,
+        target: { ...player.pos },
+      }
       this.players.set(id, mesh)
     }
 
@@ -984,7 +1102,30 @@ export class GameRenderer {
     mesh.group.rotation.y = player.yaw
     mesh.outline.position.copy(mesh.group.position)
     mesh.outline.rotation.y = player.yaw
-    const visible = player.alive && id !== 0
+
+    // Locomotion + stance: legs and arms swing with speed, the pose folds down
+    // for a crouch and drops into a lean for a slide.
+    const moveSpeed = lenXZ(player.vel)
+    const phase = world.time * (6 + moveSpeed * 0.9) + player.id * 1.7
+    const stride = (player.onGround ? 0.18 + Math.min(1, moveSpeed / 8.5) * 0.62 : 0.12) * (player.hiding ? 0 : 1)
+    mesh.legL.rotation.x = Math.sin(phase) * stride
+    mesh.legR.rotation.x = -Math.sin(phase) * stride
+    mesh.armL.rotation.x = -Math.sin(phase) * stride * 0.7
+    mesh.armR.rotation.x = player.aiming ? -1.35 : -0.9 + Math.sin(phase) * stride * 0.15
+    const stance = player.sliding ? 0.56 : player.crouching ? 0.72 : 1
+    mesh.pose.scale.y = damp(mesh.pose.scale.y, stance, 14, dt)
+    mesh.pose.rotation.x = damp(
+      mesh.pose.rotation.x,
+      player.sliding ? -0.5 : player.aiming ? -0.04 : 0,
+      12,
+      dt,
+    )
+    const heldId = player.loadout.slots[player.slot]
+    const bladeHeld = !!heldId && weaponDef(heldId).type === 'blade'
+    mesh.gun.visible = !bladeHeld
+    mesh.blade.visible = bladeHeld
+
+    const visible = player.alive && (id !== 0 || this.cameraMode === 'third') && !player.hiding
     mesh.group.visible = visible
     const local = world.players[0]
     const phantom = local?.effects.find((effect) =>
@@ -999,11 +1140,9 @@ export class GameRenderer {
     const muzzleTimer = Math.max(0, (this.enemyMuzzleTimers.get(id) ?? 0) - dt)
     if (muzzleTimer > 0) this.enemyMuzzleTimers.set(id, muzzleTimer)
     else this.enemyMuzzleTimers.delete(id)
-    mesh.muzzleFlash.visible = visible && muzzleTimer > 0
+    mesh.muzzleFlash.visible = visible && !bladeHeld && muzzleTimer > 0
     const translucent = player.invisibility > 0
     const mat = mesh.body.material as THREE.MeshStandardMaterial
-    mat.opacity = translucent ? 0.08 : 1
-    mat.transparent = translucent
     const revealed =
       isEnemy &&
       !!local &&
@@ -1021,6 +1160,14 @@ export class GameRenderer {
           material.depthTest = depthTest
           material.depthWrite = depthWrite
           material.needsUpdate = true
+        }
+        if (material instanceof THREE.MeshStandardMaterial) {
+          const opacity = translucent ? 0.08 : 1
+          if (material.opacity !== opacity || material.transparent !== translucent) {
+            material.opacity = opacity
+            material.transparent = translucent
+            material.needsUpdate = true
+          }
         }
       }
     })
@@ -1066,12 +1213,38 @@ export class GameRenderer {
       const speed = lenXZ(local.vel)
       this.bobPhase += dt * (4 + speed * 1.1)
       const bob = local.onGround ? Math.sin(this.bobPhase * 2) * Math.min(0.035, speed * 0.004) : 0
-      const eyeY = local.pos.y + local.eyeHeight + bob
-      this.camera.position.set(local.pos.x, eyeY, local.pos.z)
       const yaw = localInputYawPitch?.yaw ?? local.yaw
       const pitch = localInputYawPitch?.pitch ?? local.pitch
       const kick = local.sliding ? -0.03 : local.sprinting ? 0.02 : 0
-      this.camera.rotation.set(pitch + kick, yaw, 0)
+      if (this.cameraMode === 'third' && local.alive) {
+        const dir = lookDir(yaw, pitch)
+        const right = yawRight(yaw)
+        const eyeX = local.pos.x
+        const eyeY = local.pos.y + local.eyeHeight
+        const eyeZ = local.pos.z
+        // Shoulder camera, pulled in when geometry would swallow it.
+        let distance = 3.4
+        for (let step = 1; step <= 10; step++) {
+          const probe = step * 0.34
+          const px = eyeX - dir.x * probe + right.x * 0.45
+          const py = eyeY - dir.y * probe + 0.2
+          const pz = eyeZ - dir.z * probe + right.z * 0.45
+          if (pointBlocked(world.colliders, v3(px, py, pz))) {
+            distance = Math.max(0.4, probe - 0.34)
+            break
+          }
+        }
+        this.camera.position.set(
+          eyeX - dir.x * distance + right.x * 0.45,
+          eyeY - dir.y * distance + 0.2 + bob * 0.4,
+          eyeZ - dir.z * distance + right.z * 0.45,
+        )
+        this.camera.rotation.set(pitch + kick * 0.4, yaw, 0)
+      } else {
+        const eyeY = local.pos.y + local.eyeHeight + bob
+        this.camera.position.set(local.pos.x, eyeY, local.pos.z)
+        this.camera.rotation.set(pitch + kick, yaw, 0)
+      }
 
       this.fovKick = damp(this.fovKick, clamp(speed * 0.55, 0, 8) + (local.sliding ? 6 : 0), 6, dt)
       const heldId = local.loadout.slots[local.slot]
@@ -1126,7 +1299,9 @@ export class GameRenderer {
       }
       if (local.sliding) vm.position.y -= 0.04
       if (local.deployed) vm.position.x = 0.02
-      if (this.viewmodel) this.viewmodel.visible = local.alive && !scoped
+      if (this.viewmodel) {
+        this.viewmodel.visible = local.alive && !scoped && this.cameraMode === 'first'
+      }
 
       // Explosion light decay
       if (this.explosionLight.intensity > 0) {
@@ -1155,12 +1330,13 @@ export class GameRenderer {
       this.orbMesh.instanceMatrix.needsUpdate = true
     }
 
-    // Projectiles
+    // Projectiles (rockets) and thrown knives are separate pools.
     if (this.projectileMesh) {
+      const rockets = world.projectiles.filter((p) => p.kind !== 'knife')
       const matrix = new THREE.Matrix4()
       for (let i = 0; i < this.projectileMesh.count; i++) {
-        if (i < world.projectiles.length) {
-          const p = world.projectiles[i]
+        if (i < rockets.length) {
+          const p = rockets[i]
           matrix.makeTranslation(p.pos.x, p.pos.y, p.pos.z)
         } else {
           matrix.makeScale(0, 0, 0)
@@ -1168,6 +1344,26 @@ export class GameRenderer {
         this.projectileMesh.setMatrixAt(i, matrix)
       }
       this.projectileMesh.instanceMatrix.needsUpdate = true
+    }
+    if (this.knifeMesh) {
+      const knives = world.projectiles.filter((p) => p.kind === 'knife')
+      const matrix = new THREE.Matrix4()
+      const quat = new THREE.Quaternion()
+      const scale = new THREE.Vector3(1, 1, 1)
+      const up = new THREE.Vector3(0, 0, 1)
+      const dir = new THREE.Vector3()
+      for (let i = 0; i < this.knifeMesh.count; i++) {
+        if (i < knives.length) {
+          const p = knives[i]
+          dir.set(p.vel.x, p.vel.y, p.vel.z)
+          if (dir.lengthSq() > 1e-6) quat.setFromUnitVectors(up, dir.normalize())
+          matrix.compose(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), quat, scale)
+        } else {
+          matrix.makeScale(0, 0, 0)
+        }
+        this.knifeMesh.setMatrixAt(i, matrix)
+      }
+      this.knifeMesh.instanceMatrix.needsUpdate = true
     }
 
     // Tracers

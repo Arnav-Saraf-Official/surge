@@ -86,6 +86,11 @@ window.addEventListener('keydown', (e) => {
     if (paused) resume()
     else if (playing) pause()
   }
+  // X swaps between first-person and the follow camera.
+  if (e.code === 'KeyX' && playing && !paused && world) {
+    const mode = renderer.toggleCamera()
+    hud.showNotice(mode === 'third' ? 'FOLLOW CAMERA' : 'FIRST PERSON', 0.7)
+  }
 })
 
 canvas.addEventListener('click', () => {

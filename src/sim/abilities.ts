@@ -2,6 +2,7 @@ import type { AbilityDef, Effect } from '../data/types'
 import { weapon as weaponDef } from '../data/weapons'
 import { applyDamage, applyExposed } from './damage'
 import { moveAndCollide } from './collision'
+import { knifeCurve, knifeFlurry } from './combat'
 import { FLOURISH_COST, OVERCHARGE_COST, OVERCHARGE_FILL } from './style'
 import type { ActiveEffect, Player, World } from './types'
 import { hasEffect } from './effects'
@@ -217,6 +218,14 @@ function applyInstant(world: World, player: Player, eff: Effect): void {
           target.vel.y = Math.max(target.vel.y, 1.5 * force)
         }
       }
+      break
+    }
+    case 'knifeFlurry': {
+      knifeFlurry(world, player)
+      break
+    }
+    case 'knifeCurve': {
+      knifeCurve(world, player)
       break
     }
     case 'slowTargets': {

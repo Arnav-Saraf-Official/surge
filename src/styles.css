@@ -194,6 +194,42 @@ body {
   transition: width 80ms linear;
 }
 
+.hide-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 142px;
+  width: 200px;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
+
+.hide-prompt.show {
+  opacity: 1;
+}
+
+.hide-label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 5px #000;
+}
+
+.hide-prompt .bar {
+  height: 4px;
+  margin-top: 5px;
+  border-color: rgba(120, 220, 140, 0.35);
+}
+
+.fill.hide {
+  background: linear-gradient(90deg, #3f8f4f, #8fe39b);
+  transition: width 80ms linear;
+}
+
 .scope {
   position: absolute;
   inset: 0;

@@ -30,6 +30,8 @@ export interface WeaponRuntime {
   deployEndsAt: number
   /** Shots left in a limited-shot lethal window. */
   windowShots: number
+  /** Cooldown for the blade right-click technique. */
+  altCooldown: number
 }
 
 export interface ActiveEffect {
@@ -90,6 +92,16 @@ export interface Player {
   height: number
   onGround: boolean
   crouching: boolean
+  /** Concealed inside a hide spot; frozen in place until the player leaves. */
+  hiding: boolean
+  /** Index into `map.hides`, or -1. */
+  hideSpotId: number
+  /** 0..1 hold progress for entering or leaving a hide spot. */
+  hideProgress: number
+  /** A fresh hold is required before the exit timer starts. */
+  hideExitArmed: boolean
+  /** Where to put the player back when they leave a hide spot. */
+  hideReturnPos: Vec3 | null
   sliding: boolean
   slideTimer: number
   slideReadyAt: number
@@ -108,6 +120,9 @@ export interface Player {
   respawnAt: number
   lastDamageAt: number
   lastCombatAt: number
+  /** Katana bullet-deflect window and the parries left in it. */
+  deflectUntil: number
+  deflectCharges: number
   exposedUntil: number
   invulnerableUntil: number
 
@@ -144,6 +159,10 @@ export interface BotBrain {
   aimYaw: number
   aimPitch: number
   stuckTime: number
+  /** When the current target was first spotted, for reaction delay. */
+  targetAcquiredAt: number
+  crouchUntil: number
+  nextCrouchAt: number
   wanderX: number
   wanderZ: number
   nextWanderAt: number
@@ -162,6 +181,13 @@ export interface Projectile {
   guided: boolean
   cluster: boolean
   gravity: number
+  /** Thrown knives follow their own rules instead of exploding. */
+  kind?: 'rocket' | 'knife'
+  /** Curve Ball knives chase a target around cover. */
+  chase?: boolean
+  targetId?: number
+  /** Seconds this knife has existed, for the chase report. */
+  age?: number
 }
 
 export interface Orb {
@@ -207,11 +233,14 @@ export type SimEvent =
       targetId: number
       damage: number
       headshot: boolean
+      /** Katana neck slice. */
+      neck?: boolean
       lethal: boolean
       at: Vec3
     }
   | { type: 'damage'; playerId: number; amount: number; fromId: number; source: DamageSource }
-  | { type: 'kill'; killerId: number; victimId: number; weaponId: string; headshot: boolean; lethal: boolean; spGain: number }
+  | { type: 'kill'; killerId: number; victimId: number; weaponId: string; headshot: boolean; neck?: boolean; lethal: boolean; spGain: number }
+  | { type: 'hide'; playerId: number; spotId: number; inside: boolean }
   | { type: 'death'; playerId: number }
   | { type: 'respawn'; playerId: number; pos: Vec3 }
   | { type: 'ability'; playerId: number; abilityId: string; name: string; slot: 'F' | 'T' }
@@ -236,7 +265,15 @@ export interface InputCmd {
   jump: boolean
   sprint: boolean
   crouch: boolean
+  /** Held hide key (Z); holding near a hide spot conceals the player. */
+  hide: boolean
   aim: boolean
+  /** Right mouse held (blade aim / throw wind-up). */
+  altFire: boolean
+  /** Rising edge of the right mouse button. */
+  altPress: boolean
+  /** Falling edge of the right mouse button, used to release a throw. */
+  altRelease: boolean
   /** Rising-edge buttons, consumed by the sim each tick. */
   slide: boolean
   grappleL: boolean
@@ -264,7 +301,11 @@ export const emptyInput = (): InputCmd => ({
   jump: false,
   sprint: false,
   crouch: false,
+  hide: false,
   aim: false,
+  altFire: false,
+  altPress: false,
+  altRelease: false,
   slide: false,
   grappleL: false,
   grappleR: false,

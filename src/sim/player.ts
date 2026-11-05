@@ -106,6 +106,7 @@ export function makeWeaponRuntime(id: string): WeaponRuntime {
     deployed: false,
     deployEndsAt: 0,
     windowShots: 0,
+    altCooldown: 0,
   }
 }
 
@@ -143,6 +144,11 @@ export function createPlayer(opts: CreatePlayerOptions): Player {
     height: STAND_HEIGHT,
     onGround: false,
     crouching: false,
+    hiding: false,
+    hideSpotId: -1,
+    hideProgress: 0,
+    hideExitArmed: false,
+    hideReturnPos: null,
     sliding: false,
     slideTimer: 0,
     slideReadyAt: 0,
@@ -160,6 +166,8 @@ export function createPlayer(opts: CreatePlayerOptions): Player {
     respawnAt: 0,
     lastDamageAt: -999,
     lastCombatAt: -999,
+    deflectUntil: 0,
+    deflectCharges: 0,
     exposedUntil: 0,
     invulnerableUntil: 0,
     slot: opts.slot,
@@ -192,6 +200,9 @@ export function createPlayer(opts: CreatePlayerOptions): Player {
           aimYaw: 0,
           aimPitch: 0,
           stuckTime: 0,
+          targetAcquiredAt: 0,
+          crouchUntil: 0,
+          nextCrouchAt: 0,
           wanderX: 0,
           wanderZ: 0,
           nextWanderAt: 0,

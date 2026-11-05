@@ -52,6 +52,21 @@ export interface FireSpec {
   splashRadius?: number
   /** Pellets that must connect for a `P` lethal blast. */
   lethalPellets?: number
+  /** Dual-wielded blades strike twice per swing. */
+  dualMelee?: boolean
+}
+
+/** Right-click techniques that every blade carries. */
+export type BladeAltKind = 'deflect' | 'reap' | 'blink' | 'throw'
+
+export interface BladeAltDef {
+  kind: BladeAltKind
+  name: string
+  /** Seconds before the technique can be used again. */
+  cooldown: number
+  /** Deflect: how long the parry window stays open. */
+  window?: number
+  notes?: string
 }
 
 /**
@@ -88,6 +103,8 @@ export type Effect =
   | { kind: 'knockback'; radius: number; force: number }
   | { kind: 'shotgunSwing'; radius: number; damageFraction: number }
   | { kind: 'phantomSight' }
+  | { kind: 'knifeFlurry' }
+  | { kind: 'knifeCurve' }
 
 /** Timed effect kinds. Others fire once when the ability is activated. */
 export const TIMED_EFFECTS = new Set<Effect['kind']>([
@@ -141,6 +158,8 @@ export interface WeaponDef {
   fire: FireSpec
   f: AbilityDef
   t: AbilityDef
+  /** Blades have a right-click technique in addition to the normal attack. */
+  alt?: BladeAltDef
 }
 
 export type UpgradeKey = 'vitality' | 'agility' | 'dexterity' | 'focus' | 'grapple' | 'might'
@@ -161,6 +180,17 @@ export interface BoxDef {
   texture?: string
 }
 
+/** A place a player can conceal themselves by holding the hide key. */
+export interface HideSpotDef {
+  /** Centre of the hiding volume, in world space. */
+  pos: [number, number, number]
+  /** How close the player must be to start hiding. */
+  radius: number
+  /** What the spot looks like from the outside. */
+  cover?: 'leaves' | 'crates'
+  label?: string
+}
+
 export interface MapDef {
   id: string
   name: string
@@ -173,6 +203,8 @@ export interface MapDef {
   boxes: BoxDef[]
   spawns: [number, number, number][]
   orbs: [number, number, number][]
+  /** Concealment spots, visual only (never part of collision). */
+  hides?: HideSpotDef[]
   /** Falling below this Y respawns the player. */
   killY: number
   bestLoadouts: string

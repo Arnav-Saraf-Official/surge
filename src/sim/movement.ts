@@ -2,6 +2,7 @@ import { clamp, damp, lenXZ, lookDir, rayAABB, v3, yawForward, yawRight, type Ve
 import { EXPOSED_SPEED } from './damage'
 import { terrainHeight } from '../data/maps'
 import { CROUCH_HEIGHT, SLIDE_HEIGHT, STAND_HEIGHT, moveAndCollide, playerBox } from './collision'
+import type { HideSpotDef } from '../data/types'
 import type { InputCmd, Player, World } from './types'
 
 export const GROUND_SPEED = 6
@@ -15,6 +16,7 @@ export const DOUBLE_JUMP_HEIGHT_SCALE = 0.7
 export const AIR_ACCEL = 22
 export const TERMINAL_VELOCITY = 60
 export const GRAPPLE_BOOST_DURATION = 5
+export const HIDE_HOLD_TIME = 2
 const GRAPPLE_REEL_SPEED = 12
 const GRAPPLE_BOOST_ACCEL = 72
 const GRAPPLE_SIDE_OFFSET = 0.32
@@ -29,11 +31,90 @@ export function effectSpeedMult(player: Player): number {
   return mult
 }
 
+/** Closest concealment spot the player is standing in, if any. */
+export function nearestHideSpot(
+  world: World,
+  player: Player,
+): { spot: HideSpotDef; index: number; distance: number } | null {
+  const hides = world.map.hides
+  if (!hides?.length) return null
+  let best: { spot: HideSpotDef; index: number; distance: number } | null = null
+  for (let i = 0; i < hides.length; i++) {
+    const spot = hides[i]
+    const distance = Math.hypot(spot.pos[0] - player.pos.x, spot.pos[2] - player.pos.z)
+    if (distance > spot.radius) continue
+    if (Math.abs(spot.pos[1] - player.pos.y) > 2.6) continue
+    if (!best || distance < best.distance) best = { spot, index: i, distance }
+  }
+  return best
+}
+
+/**
+ * Concealment: hold the hide key for two seconds inside a spot to enter, then
+ * release and hold again for two seconds to leave. While hidden the player is
+ * frozen but still damageable, so explosives and shots that reach the spot
+ * still hurt.
+ */
+function updateHide(world: World, player: Player, input: InputCmd, dt: number): void {
+  if (player.hiding) {
+    const spot = world.map.hides?.[player.hideSpotId]
+    if (!input.hide) player.hideExitArmed = true
+    if (player.hideExitArmed && input.hide) player.hideProgress += dt / HIDE_HOLD_TIME
+    else if (!input.hide) player.hideProgress = 0
+    if (player.hideProgress >= 1) {
+      const back = player.hideReturnPos ?? v3(spot?.pos[0] ?? player.pos.x, spot?.pos[1] ?? player.pos.y, spot?.pos[2] ?? player.pos.z)
+      player.hiding = false
+      player.hideProgress = 0
+      player.hideExitArmed = false
+      player.hideSpotId = -1
+      player.hideReturnPos = null
+      player.pos = { ...back }
+      player.vel = v3()
+      world.events.push({ type: 'hide', playerId: player.id, spotId: -1, inside: false })
+    }
+    return
+  }
+
+  const near = input.hide && player.onGround ? nearestHideSpot(world, player) : null
+  if (near) {
+    player.hideProgress += dt / HIDE_HOLD_TIME
+    if (player.hideProgress >= 1) {
+      // Reset the meter; the exit timer starts from zero on a fresh hold.
+      player.hideProgress = 0
+      player.hiding = true
+      player.hideSpotId = near.index
+      player.hideReturnPos = { ...player.pos }
+      player.pos = v3(near.spot.pos[0], near.spot.pos[1], near.spot.pos[2])
+      player.vel = v3()
+      player.sliding = false
+      player.grappling = false
+      player.grapples[0].active = false
+      player.grapples[1].active = false
+      world.events.push({ type: 'hide', playerId: player.id, spotId: near.index, inside: true })
+    }
+  } else {
+    player.hideProgress = Math.max(0, player.hideProgress - dt * 2)
+  }
+}
+
 /** One movement step. Humans and bots both run through this exact function. */
 export function stepMovement(world: World, player: Player, input: InputCmd, dt: number): void {
   const stats = player.stats
   player.yaw = input.yaw
   player.pitch = input.pitch
+
+  // ---- Concealment ---------------------------------------------------
+  updateHide(world, player, input, dt)
+  if (player.hiding) {
+    player.vel = v3()
+    player.onGround = true
+    player.sliding = false
+    player.sprinting = false
+    player.crouching = true
+    player.height = damp(player.height, CROUCH_HEIGHT, 18, dt)
+    player.eyeHeight = damp(player.eyeHeight, 1.15, 18, dt)
+    return
+  }
 
   const fwd = yawForward(player.yaw)
   const right = yawRight(player.yaw)

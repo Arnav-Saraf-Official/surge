@@ -4,7 +4,7 @@ import { getMap, terrainHeight } from '../data/maps'
 import type { UpgradeKey, WeaponType } from '../data/types'
 import { weapon as weaponDef } from '../data/weapons'
 import { fireGrapple, stepMovement } from './movement'
-import { fireWeapon, meleeAttack, startReload, tickWeapons, updateProjectiles } from './combat'
+import { fireWeapon, meleeAttack, startReload, tickWeapons, updateProjectiles, useBladeAlt } from './combat'
 import { killPlayer, updateRegen } from './damage'
 import { botInput, BOT_SKILL, type BotDifficulty } from './bots'
 import { drainSp } from './style'
@@ -218,6 +218,11 @@ export function respawnPlayer(world: World, player: Player): void {
   player.alive = true
   player.effects = []
   player.sliding = false
+  player.hiding = false
+  player.hideSpotId = -1
+  player.hideProgress = 0
+  player.hideExitArmed = false
+  player.hideReturnPos = null
   player.deployed = false
   player.grapples[0].active = false
   player.grapples[1].active = false
@@ -229,6 +234,8 @@ export function respawnPlayer(world: World, player: Player): void {
   player.revealRadius = 0
   player.invulnerableUntil = world.time + 0.5
   player.lastDamageAt = world.time - 20
+  player.deflectUntil = 0
+  player.deflectCharges = 0
   player.slot = firstSlot(player)
   player.quickReturnSlot = -1
   for (const id of Object.keys(player.weapons)) {
@@ -261,13 +268,19 @@ function quickUse(world: World, player: Player, type: WeaponType): void {
   player.slot = idx
   const id = player.loadout.slots[idx]
   if (!id) return
-  if (type === 'blade') meleeAttack(world, player, weaponDef(id))
+  if (type === 'blade') {
+    const def = weaponDef(id)
+    meleeAttack(world, player, def)
+    if (def.fire.dualMelee) meleeAttack(world, player, def, 1)
+  }
   else fireWeapon(world, player)
   player.quickReturnSlot = previous
   player.quickReturnAt = world.time + 0.15
 }
 
 function handleInput(world: World, player: Player, input: InputCmd): void {
+  // Concealed players cannot shoot, swap or use abilities.
+  if (player.hiding) return
   if (player.quickReturnSlot >= 0 && world.time >= player.quickReturnAt) {
     player.slot = player.quickReturnSlot
     player.quickReturnSlot = -1
@@ -296,6 +309,15 @@ function handleInput(world: World, player: Player, input: InputCmd): void {
 
   if (input.bladeQuick) quickUse(world, player, 'blade')
   if (input.explosiveQuick) quickUse(world, player, 'explosive')
+
+  // Blade right-click: instant techniques fire on press, throws on release.
+  if (input.altPress || input.altRelease) {
+    const altId = player.loadout.slots[player.slot]
+    const alt = altId ? weaponDef(altId).alt : undefined
+    if (alt && (alt.kind === 'throw' ? input.altRelease : input.altPress)) {
+      useBladeAlt(world, player)
+    }
+  }
 
   if (input.fire) fireWeapon(world, player)
 }

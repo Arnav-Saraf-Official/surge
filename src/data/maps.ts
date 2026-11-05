@@ -877,6 +877,12 @@ export const MAPS: MapDef[] = [
       [0, 1, -30],
       [0, 1, 30],
     ],
+    hides: [
+      { pos: [-14, 0.1, -13], radius: 3.2, cover: 'leaves', label: 'Tree hollow' },
+      { pos: [-16, 0.2, -42], radius: 2.8, cover: 'crates', label: 'Storage shed' },
+      { pos: [9.5, 0.1, 4], radius: 3.2, cover: 'leaves', label: 'Bush cluster' },
+      { pos: [-2, 0.1, 30], radius: 3.4, cover: 'leaves', label: 'Overgrown verge' },
+    ],
     killY: -20,
     bestLoadouts: 'Shotguns & blades for room clearing; snipers for 3rd story secret rooms and roof roosts.',
   },
@@ -916,6 +922,13 @@ export const MAPS: MapDef[] = [
       [32, 28.5, -32],
       [-55, 1.0, 0],
       [55, 1.0, 0],
+    ],
+    hides: [
+      { pos: [-8, 17.2, -32], radius: 3.4, cover: 'leaves', label: 'Canopy leaves' },
+      { pos: [8, 17.2, 32], radius: 3.4, cover: 'leaves', label: 'Canopy leaves' },
+      { pos: [-24, 0.1, -12], radius: 3.2, cover: 'leaves', label: 'Fern thicket' },
+      { pos: [24, 0.1, 40], radius: 3.2, cover: 'leaves', label: 'Fern thicket' },
+      { pos: [-33, 0.1, 0], radius: 3.0, cover: 'crates', label: 'Ruin stores' },
     ],
     killY: -25,
     bestLoadouts: 'Double grapples, high-mobility rifles and snipers in the trees; mines and shotguns in the maze.',
@@ -960,6 +973,13 @@ export const MAPS: MapDef[] = [
       [-15, 36.7, 10],
       [25, 44.7, -20],
     ],
+    hides: [
+      { pos: [-45, 0.2, -37], radius: 3.2, cover: 'crates', label: 'Hangar crates' },
+      { pos: [-45, 0.2, 41], radius: 2.8, cover: 'crates', label: 'Diner booth' },
+      { pos: [45, 0.2, 42], radius: 2.8, cover: 'crates', label: 'Supply rack' },
+      { pos: [0, 0.1, -14], radius: 3.2, cover: 'leaves', label: 'Fuel dump foliage' },
+      { pos: [30, 0.1, 12], radius: 3.2, cover: 'crates', label: 'Sandbag blind' },
+    ],
     killY: -30,
     bestLoadouts: 'Hybrid loadout: snipers for watchtowers and flying plane drops; assault rifles & shotguns for ground buildings.',
   },
@@ -977,6 +997,11 @@ for (const map of MAPS) {
   for (const point of [...map.spawns, ...map.orbs]) {
     point[0] *= MAP_LAYOUT_SCALE
     point[2] *= MAP_LAYOUT_SCALE
+  }
+  for (const hide of map.hides ?? []) {
+    hide.pos[0] *= MAP_LAYOUT_SCALE
+    hide.pos[2] *= MAP_LAYOUT_SCALE
+    hide.radius *= MAP_LAYOUT_SCALE
   }
   if (map.terrain) map.terrain.flatRadius *= MAP_LAYOUT_SCALE
 }

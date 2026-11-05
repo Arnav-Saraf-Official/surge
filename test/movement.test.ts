@@ -318,4 +318,29 @@ describe('movement', () => {
     expect(Math.abs(balanced.player.vel.x)).toBeLessThan(0.1)
     expect(Math.abs(balanced.player.pos.x)).toBeLessThan(0.1)
   })
+
+  it('takes two seconds to hide and another two to leave', () => {
+    const { world, player } = flatMatch()
+    const spot = world.map.hides?.[0]
+    expect(spot).toBeTruthy()
+    if (!spot) return
+    player.pos = { x: spot.pos[0], y: spot.pos[1], z: spot.pos[2] }
+    player.vel = { x: 0, y: 0, z: 0 }
+    player.onGround = true
+
+    for (let i = 0; i < 70; i++) stepMovement(world, player, cmd({ hide: true }), 1 / 60)
+    expect(player.hiding).toBe(false)
+
+    // Two seconds of holding, plus the fall onto the spot on the first ticks.
+    for (let i = 0; i < 80; i++) stepMovement(world, player, cmd({ hide: true }), 1 / 60)
+    expect(player.hiding).toBe(true)
+    expect(player.pos).toEqual({ x: spot.pos[0], y: spot.pos[1], z: spot.pos[2] })
+
+    // The exit timer needs a fresh hold, so releasing arms it first.
+    stepMovement(world, player, cmd({}), 1 / 60)
+    for (let i = 0; i < 100; i++) stepMovement(world, player, cmd({ hide: true }), 1 / 60)
+    expect(player.hiding).toBe(true)
+    for (let i = 0; i < 30; i++) stepMovement(world, player, cmd({ hide: true }), 1 / 60)
+    expect(player.hiding).toBe(false)
+  })
 })
