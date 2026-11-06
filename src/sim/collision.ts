@@ -40,6 +40,46 @@ export interface MoveResult {
 }
 
 /**
+ * Push a player box out of any geometry it starts inside, along the shallowest
+ * axis. An embedded body would otherwise reject every attempted move (each
+ * candidate still overlaps), leaving it frozen inside a wall and shielded from
+ * shots by that wall.
+ */
+export function depenetrate(colliders: AABB[], pos: Vec3, height: number): Vec3 {
+  const out = { x: pos.x, y: pos.y, z: pos.z }
+  for (let pass = 0; pass < 4; pass++) {
+    const box = playerBox(out, height)
+    let hit: AABB | null = null
+    for (let i = 0; i < colliders.length; i++) {
+      if (aabbOverlap(box, colliders[i])) {
+        hit = colliders[i]
+        break
+      }
+    }
+    if (!hit) break
+
+    const pushLeft = box.max.x - hit.min.x
+    const pushRight = hit.max.x - box.min.x
+    const pushDown = box.max.y - hit.min.y
+    const pushUp = hit.max.y - box.min.y
+    const pushBack = box.max.z - hit.min.z
+    const pushForward = hit.max.z - box.min.z
+    const options: Array<{ axis: 'x' | 'y' | 'z'; depth: number; push: number }> = [
+      { axis: 'x', depth: pushLeft, push: -pushLeft - 0.002 },
+      { axis: 'x', depth: pushRight, push: pushRight + 0.002 },
+      { axis: 'y', depth: pushDown, push: -pushDown - 0.002 },
+      { axis: 'y', depth: pushUp, push: pushUp + 0.002 },
+      { axis: 'z', depth: pushBack, push: -pushBack - 0.002 },
+      { axis: 'z', depth: pushForward, push: pushForward + 0.002 },
+    ]
+    let best = options[0]
+    for (const option of options) if (option.depth < best.depth) best = option
+    out[best.axis] += best.push
+  }
+  return out
+}
+
+/**
  * Axis-separated kinematic move with auto step-up. Mutates nothing; returns the
  * resolved position and velocity. Deterministic and cheap enough for 60 Hz.
  */

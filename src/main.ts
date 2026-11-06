@@ -31,6 +31,8 @@ function startMatch(): void {
     loadout: menu.settings.loadout,
     upgrades: menu.settings.upgrades,
     botCount: menu.settings.botCount,
+    allyBots: menu.settings.allyBots,
+    enemyBots: menu.settings.enemyBots,
     difficulty: menu.settings.difficulty,
     mode: menu.settings.mode,
   })

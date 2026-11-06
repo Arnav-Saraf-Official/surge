@@ -4,6 +4,8 @@ import { parseSavedSettings, type MenuSettings } from '../src/ui/menu'
 const defaults: MenuSettings = {
   mapId: 'hollow-ward',
   botCount: 7,
+  allyBots: 3,
+  enemyBots: 4,
   difficulty: 'normal',
   mode: 'ffa',
   loadout: { slots: ['reaper', 'breacher', null, null, null, null, null] },
@@ -18,6 +20,8 @@ describe('saved menu settings', () => {
         settings: {
           mapId: 'skyfoundry',
           botCount: 99,
+          allyBots: 2,
+          enemyBots: 6,
           difficulty: 'elite',
           mode: 'training',
           loadout: { slots: ['katana', 'katana', null, null, null, null, null] },
@@ -30,6 +34,8 @@ describe('saved menu settings', () => {
     expect(restored).toEqual({
       ...defaults,
       mapId: 'skyfoundry',
+      allyBots: 2,
+      enemyBots: 6,
       difficulty: 'elite',
       mode: 'training',
       loadout: { slots: ['katana', null, null, null, null, null, null] },

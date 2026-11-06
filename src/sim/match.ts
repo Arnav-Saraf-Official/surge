@@ -26,6 +26,10 @@ export interface MatchConfig {
   loadout: Loadout
   upgrades: Record<UpgradeKey, number>
   botCount: number
+  /** Team deathmatch only: bots on the hero's side (Alpha). */
+  allyBots?: number
+  /** Team deathmatch only: bots on the opposing side (Bravo). */
+  enemyBots?: number
   difficulty: BotDifficulty
   mode?: MatchMode
   scoreLimit?: number
@@ -156,7 +160,22 @@ export function createWorld(cfg: MatchConfig): World {
   hero.slot = firstSlot(hero)
   world.players.push(hero)
 
-  for (let i = 0; i < cfg.botCount; i++) {
+  const botTeams: number[] = []
+  if (mode === 'tdm') {
+    if (cfg.allyBots !== undefined || cfg.enemyBots !== undefined) {
+      const allies = Math.max(0, Math.floor(cfg.allyBots ?? 0))
+      const enemies = Math.max(0, Math.floor(cfg.enemyBots ?? 0))
+      for (let i = 0; i < allies; i++) botTeams.push(0)
+      for (let i = 0; i < enemies; i++) botTeams.push(1)
+    } else {
+      // Alternating bots keeps the hero on Alpha with three allies at 7 bots.
+      for (let i = 0; i < cfg.botCount; i++) botTeams.push(i % 2 === 0 ? 1 : 0)
+    }
+  } else {
+    for (let i = 0; i < cfg.botCount; i++) botTeams.push(0)
+  }
+
+  for (let i = 0; i < botTeams.length; i++) {
     const loadout = emptyLoadout()
     const picks = BOT_LOADOUTS[i % BOT_LOADOUTS.length]
     const slots = [0, 1, 4, 6]
@@ -167,8 +186,7 @@ export function createWorld(cfg: MatchConfig): World {
       id: i + 1,
       name: BOT_NAMES[i % BOT_NAMES.length],
       slot: 0,
-      // Alternating bots keeps the hero on Alpha with three allies at 7 bots.
-      team: mode === 'tdm' ? (i % 2 === 0 ? 1 : 0) : 0,
+      team: botTeams[i],
       isBot: true,
       botSkill: BOT_SKILL[cfg.difficulty],
       loadout,

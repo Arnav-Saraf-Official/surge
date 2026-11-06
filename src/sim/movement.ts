@@ -1,7 +1,7 @@
 import { clamp, damp, lenXZ, lookDir, rayAABB, v3, yawForward, yawRight, type Vec3 } from '../core/math'
 import { EXPOSED_SPEED } from './damage'
 import { terrainHeight } from '../data/maps'
-import { CROUCH_HEIGHT, SLIDE_HEIGHT, STAND_HEIGHT, moveAndCollide, playerBox } from './collision'
+import { CROUCH_HEIGHT, SLIDE_HEIGHT, STAND_HEIGHT, depenetrate, moveAndCollide, playerBox } from './collision'
 import type { HideSpotDef } from '../data/types'
 import type { InputCmd, Player, World } from './types'
 
@@ -114,6 +114,16 @@ export function stepMovement(world: World, player: Player, input: InputCmd, dt: 
     player.height = damp(player.height, CROUCH_HEIGHT, 18, dt)
     player.eyeHeight = damp(player.eyeHeight, 1.15, 18, dt)
     return
+  }
+
+  // Rare overlaps (bad spawn, knockback into geometry) would otherwise make
+  // every move illegal. Resolve them a few times a second, not every tick.
+  if (world.tick % 10 === 0) {
+    const free = depenetrate(world.colliders, player.pos, player.height)
+    if (free.x !== player.pos.x || free.y !== player.pos.y || free.z !== player.pos.z) {
+      player.pos = free
+      player.vel = v3()
+    }
   }
 
   const fwd = yawForward(player.yaw)

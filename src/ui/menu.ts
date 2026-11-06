@@ -13,6 +13,8 @@ import { leaderboard } from '../sim/match'
 export interface MenuSettings {
   mapId: string
   botCount: number
+  allyBots: number
+  enemyBots: number
   difficulty: BotDifficulty
   mode: 'ffa' | 'training' | 'tdm'
   loadout: Loadout
@@ -52,6 +54,12 @@ export function parseSavedSettings(raw: string | null, defaults: MenuSettings): 
   }
   if (Number.isInteger(settings.botCount) && Number(settings.botCount) >= 1 && Number(settings.botCount) <= 11) {
     result.botCount = Number(settings.botCount)
+  }
+  for (const key of ['allyBots', 'enemyBots'] as const) {
+    const value = settings[key]
+    if (Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 8) {
+      result[key] = Number(value)
+    }
   }
   if (settings.difficulty === 'easy' || settings.difficulty === 'normal' || settings.difficulty === 'hard' || settings.difficulty === 'elite') {
     result.difficulty = settings.difficulty
@@ -100,6 +108,8 @@ export class Menu {
     this.settings = {
       mapId: MAPS[0].id,
       botCount: 7,
+      allyBots: 3,
+      enemyBots: 4,
       difficulty: 'normal',
       mode: 'ffa',
       loadout: { slots: ['reaper', 'breacher', 'gilded', 'ghostline', null, null, null] },
@@ -244,7 +254,9 @@ export class Menu {
     const packageLabel = stats.specialist ? 'SPECIALIST' : stats.duelist ? 'DUELIST' : 'BALANCED'
     const statusLine = `${
       s.mode === 'training' ? 'Training ground' : s.mode === 'tdm' ? 'Team deathmatch' : 'Free for all'
-    } · ${s.botCount} bots · ${s.difficulty}`
+    } · ${
+      s.mode === 'tdm' ? `Alpha ${s.allyBots + 1} vs Bravo ${s.enemyBots}` : `${s.botCount} bots`
+    } · ${s.difficulty}`
 
     const slotHtml = s.loadout.slots
       .map((id, i) => {
@@ -376,8 +388,27 @@ export class Menu {
                   <span class="field-label" id="mode-label">Mode</span>
                   <div class="seg" role="group" aria-labelledby="mode-label">${modeHtml}</div>
                 </div>
+                ${
+                  s.mode === 'tdm'
+                    ? `
                 <div class="field range-field">
-                  <label class="field-label" for="bot-count">${s.mode === 'tdm' ? 'Bots' : 'Hostiles'} · ${s.botCount}</label>
+                  <label class="field-label" for="ally-count">Allies · ${s.allyBots}</label>
+                  <div class="range-row">
+                    <input id="ally-count" type="range" min="0" max="8" value="${s.allyBots}" style="--fill:${(s.allyBots / 8) * 100}%" />
+                    <output id="ally-count-label" for="ally-count">${s.allyBots}</output>
+                  </div>
+                </div>
+                <div class="field range-field">
+                  <label class="field-label" for="enemy-count">Enemies · ${s.enemyBots}</label>
+                  <div class="range-row">
+                    <input id="enemy-count" type="range" min="0" max="8" value="${s.enemyBots}" style="--fill:${(s.enemyBots / 8) * 100}%" />
+                    <output id="enemy-count-label" for="enemy-count">${s.enemyBots}</output>
+                  </div>
+                  <span class="field-hint">You + ${s.allyBots} allies vs ${s.enemyBots} enemies · first to 40</span>
+                </div>`
+                    : `
+                <div class="field range-field">
+                  <label class="field-label" for="bot-count">Hostiles · ${s.botCount}</label>
                   <div class="range-row">
                     <input id="bot-count" type="range" min="1" max="11" value="${s.botCount}" style="--fill:${((s.botCount - 1) / 10) * 100}%" />
                     <output id="bot-count-label" for="bot-count">${s.botCount}</output>
@@ -385,11 +416,10 @@ export class Menu {
                   <span class="field-hint">${
                     s.mode === 'training'
                       ? 'Passive targets for movement practice'
-                      : s.mode === 'tdm'
-                        ? 'Alpha vs Bravo · first team to 40'
-                        : 'Everyone for themselves · first to 25'
+                      : 'Everyone for themselves · first to 25'
                   }</span>
-                </div>
+                </div>`
+                }
               </div>
             </section>
           </div>
@@ -524,8 +554,22 @@ export class Menu {
       const label = root.querySelector('#bot-count-label')
       if (label) label.textContent = range.value
       const fieldLabel = root.querySelector('label[for="bot-count"]')
-      if (fieldLabel) fieldLabel.textContent = `${this.settings.mode === 'tdm' ? 'Bots' : 'Hostiles'} · ${range.value}`
+      if (fieldLabel) fieldLabel.textContent = `Hostiles · ${range.value}`
     })
+    const bindTeamRange = (id: 'ally-count' | 'enemy-count', key: 'allyBots' | 'enemyBots', title: string) => {
+      const input = root.querySelector<HTMLInputElement>(`#${id}`)
+      input?.addEventListener('input', () => {
+        this.settings[key] = Number(input.value)
+        this.persistSettings()
+        input.style.setProperty('--fill', `${(Number(input.value) / 8) * 100}%`)
+        const label = root.querySelector(`#${id}-label`)
+        if (label) label.textContent = input.value
+        const fieldLabel = root.querySelector(`label[for="${id}"]`)
+        if (fieldLabel) fieldLabel.textContent = `${title} · ${input.value}`
+      })
+    }
+    bindTeamRange('ally-count', 'allyBots', 'Allies')
+    bindTeamRange('enemy-count', 'enemyBots', 'Enemies')
     root.querySelector('[data-action="start"]')?.addEventListener('click', () => {
       this.persistSettings()
       this.onStart?.(this.settings)

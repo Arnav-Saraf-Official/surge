@@ -13,6 +13,8 @@ import {
   DOUBLE_JUMP_HEIGHT_SCALE,
   SPRINT_SPEED,
 } from '../src/sim/movement'
+import { aabbOverlap } from '../src/core/math'
+import { playerBox } from '../src/sim/collision'
 import type { Player, World } from '../src/sim/types'
 
 function flatMatch(): { world: World; player: Player } {
@@ -153,6 +155,22 @@ describe('movement', () => {
     const before = player.vel.y
     stepMovement(world, player, cmd({ jump: true }), 1 / 60)
     expect(player.vel.y).toBeLessThan(before)
+  })
+
+  it('pushes a body that starts inside geometry back out', () => {
+    const { world, player } = flatMatch()
+    const wall = { min: { x: 1, y: 0, z: 18 }, max: { x: 3, y: 4, z: 22 } }
+    world.colliders = [wall]
+    player.pos = { x: 2, y: 1, z: 20 }
+    player.vel = { x: 0, y: 0, z: 0 }
+    player.onGround = false
+    stepMovement(world, player, cmd({}), 1 / 60)
+    expect(aabbOverlap(playerBox(player.pos, player.height), wall)).toBe(false)
+
+    // Once free, the body can move again instead of being stuck forever.
+    const startZ = player.pos.z
+    for (let i = 0; i < 30; i++) stepMovement(world, player, cmd({ yaw: 0, moveZ: 1 }), 1 / 60)
+    expect(player.pos.z).toBeLessThan(startZ)
   })
 
   it('does not let players walk through walls', () => {

@@ -1,4 +1,4 @@
-import { angleDelta, clamp, dist, v3, yawForward } from '../core/math'
+import { angleDelta, clamp, dist, v3, yawForward, yawRight } from '../core/math'
 import { weapon as weaponDef } from '../data/weapons'
 import { abilityStatus, useAbility } from './abilities'
 import { segmentBlocked } from './collision'
@@ -29,6 +29,14 @@ const PREFERRED_RANGE: Record<string, number> = {
 
 function visible(world: World, from: Player, to: Player): boolean {
   return !segmentBlocked(world.colliders, eyePos(from), eyePos(to))
+}
+
+function blockedAhead(world: World, bot: Player, dirX: number, dirZ: number, reach = 1.1): boolean {
+  const len = Math.hypot(dirX, dirZ)
+  if (len < 0.01) return false
+  const origin = v3(bot.pos.x, bot.pos.y + Math.min(0.9, bot.height * 0.5), bot.pos.z)
+  const to = v3(origin.x + (dirX / len) * reach, origin.y, origin.z + (dirZ / len) * reach)
+  return segmentBlocked(world.colliders, origin, to)
 }
 
 function chooseTarget(world: World, bot: Player): Player | null {
@@ -175,14 +183,35 @@ export function botInput(world: World, bot: Player): InputCmd {
     brain.strafe = 0
   }
 
-  // Unstick: if we want to move but aren't, hop.
   const speed = Math.hypot(bot.vel.x, bot.vel.z)
-  if (input.moveZ !== 0 && speed < 0.6) {
+
+  // Wall slide: once we've slowed against something, sidestep along it
+  // instead of grinding into the wall until the match ends.
+  const fwd = yawForward(input.yaw)
+  const right = yawRight(input.yaw)
+  if (
+    speed < 3 &&
+    input.moveZ !== 0 &&
+    blockedAhead(world, bot, right.x * input.moveX + fwd.x * input.moveZ, right.z * input.moveX + fwd.z * input.moveZ)
+  ) {
+    const side = brain.strafe >= 0 ? 1 : -1
+    const stepAside = (mult: number): boolean => {
+      if (blockedAhead(world, bot, right.x * mult, right.z * mult)) return false
+      input.moveX = mult
+      input.moveZ = 0.3
+      return true
+    }
+    if (!stepAside(side)) stepAside(-side)
+  }
+
+  // Unstick: if we want to move but aren't, hop and pick a new heading.
+  if ((input.moveZ !== 0 || input.moveX !== 0) && speed < 0.6) {
     brain.stuckTime += 1 / 60
-    if (brain.stuckTime > 0.35) {
+    if (brain.stuckTime > 0.4) {
       input.jump = true
       brain.stuckTime = 0
       brain.strafe = -brain.strafe
+      brain.nextWanderAt = 0
     }
   } else {
     brain.stuckTime = 0

@@ -108,6 +108,23 @@ describe('team deathmatch', () => {
     expect(world.match.teamScores[0] + world.match.teamScores[1]).toBe(teamKills)
   })
 
+  it('uses the requested ally and enemy bot counts', () => {
+    const world = createWorld({
+      mapId: 'hollow-ward',
+      loadout,
+      upgrades: emptyUpgrades(),
+      botCount: 1,
+      allyBots: 2,
+      enemyBots: 5,
+      difficulty: 'normal',
+      mode: 'tdm',
+      seed: 3,
+    })
+
+    expect(world.players.filter((p) => p.team === 0)).toHaveLength(3)
+    expect(world.players.filter((p) => p.team === 1)).toHaveLength(5)
+  })
+
   it('gives every blade a different primary ability', () => {
     const blades = WEAPONS.filter((w) => w.type === 'blade')
     const ids = new Set(blades.map((b) => b.f.id))
